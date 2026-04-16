@@ -32,6 +32,21 @@ The application is built completely natively in Kotlin using Jetpack Compose and
     *   `getDispatchInbox`: Critical dispatch exception messages.
     *   `getCompanyFAQs`: SOP documentation (Pet policies, breakdown procedures, etc).
     *   `getPaycheckInfo`: Settled pay and mileage totals.
+    *   `findNearestSwiftTerminal`: Nearby Swift yards and internal amenities.
+    *   `checkInGaugeSafetyScore`: Driver telemetry ranking and recent safety events.
+    *   `getFuelNetworkRouting`: Approved in-network fuel routing logic.
+
+### What Can You Ask? (Example Prompts)
+
+With the tools implemented above, the driver can naturally ask the copilot questions such as:
+*   **"What am I hauling right now and when is my next stop?"** *(Triggers `getLoadStatus`)*
+*   **"Where is the nearest Swift terminal with a shower and a maintenance shop?"** *(Triggers `findNearestSwiftTerminal`)*
+*   **"How much drive time do I have left on my clock today?"** *(Triggers `getComplianceAlerts`)*
+*   **"How does my InGauge safety score look? Did that hard brake yesterday affect my bonus?"** *(Triggers `checkInGaugeSafetyScore`)*
+*   **"Where should I get fuel next on this route?"** *(Triggers `getFuelNetworkRouting`)*
+*   **"What's the weather and traffic looking like for the next 4 hours?"** *(Triggers `getRouteRisks`)*
+*   **"Read my unread messages from dispatch."** *(Triggers `getDispatchInbox`)*
+*   **"What is the company policy on having a dog in the truck?"** *(Triggers `getCompanyFAQs`)*
 
 ## Setup Instructions
 
