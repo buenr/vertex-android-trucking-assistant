@@ -70,13 +70,6 @@ class GeminiViewModel : ViewModel() {
                 addLog("Turn complete — resuming mic")
                 startRecorder()
             },
-            onUserTextReceived = { text ->
-                _uiState.value = _uiState.value.copy(userText = text)
-                stopRecorder()
-            },
-            onGeminiTextReceived = { text ->
-                _uiState.value = _uiState.value.copy(geminiText = text)
-            },
             onToolCallStarted = { toolName ->
                 _uiState.value = _uiState.value.copy(currentTool = toolName)
                 addLog("TOOL CALL: $toolName")

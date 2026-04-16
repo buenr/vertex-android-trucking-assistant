@@ -16,8 +16,6 @@ data class BidiGenerateContentSetup(
     val model: String,
     @SerialName("generationConfig") val generationConfig: GenerationConfig? = null,
     @SerialName("realtimeInputConfig") val realtimeInputConfig: RealtimeInputConfig? = null,
-    @SerialName("inputAudioTranscription") val inputAudioTranscription: AudioTranscriptionConfig? = null,
-    @SerialName("outputAudioTranscription") val outputAudioTranscription: AudioTranscriptionConfig? = null,
     @SerialName("systemInstruction") val systemInstruction: Content? = null,
     val tools: List<Tool>? = null
 )
@@ -32,11 +30,6 @@ data class GenerationConfig(
 data class SpeechConfig(
     @SerialName("languageCode") val languageCode: String? = null,
     @SerialName("voiceConfig") val voiceConfig: VoiceConfig? = null
-)
-
-@Serializable
-data class AudioTranscriptionConfig(
-    @SerialName("languageCodes") val languageCodes: List<String>? = null
 )
 
 @Serializable
@@ -147,15 +140,8 @@ data class ServerError(
 @Serializable
 data class ServerContent(
     @SerialName("modelTurn") val modelTurn: Content? = null,
-    @SerialName("inputTranscription") val inputTranscription: Transcription? = null,
-    @SerialName("outputTranscription") val outputTranscription: Transcription? = null,
     @SerialName("turnComplete") val turnComplete: Boolean? = null,
     val interrupted: Boolean? = null
-)
-
-@Serializable
-data class Transcription(
-    val text: String
 )
 
 @Serializable

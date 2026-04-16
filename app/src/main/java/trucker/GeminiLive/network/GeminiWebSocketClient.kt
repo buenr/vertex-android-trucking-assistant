@@ -16,8 +16,6 @@ class GeminiWebSocketClient(
     private val onAudioReceived: (ByteArray) -> Unit,
     private val onInterrupted: () -> Unit,
     private val onTurnComplete: () -> Unit,
-    private val onUserTextReceived: (String) -> Unit,
-    private val onGeminiTextReceived: (String) -> Unit,
     private val onToolCallStarted: (String) -> Unit,
     private val onError: (String) -> Unit
 ) {
@@ -102,14 +100,12 @@ class GeminiWebSocketClient(
                         put("thinkingLevel", "LOW")
                     }
                 }
-                putJsonObject("inputAudioTranscription") {}
-                putJsonObject("outputAudioTranscription") {}
                 putJsonObject("systemInstruction") {
                     putJsonArray("parts") {
                         addJsonObject {
                             put(
                                 "text",
-                                "You are a Swift Transportation trucking copilot (AI Assistant). Use concise, operational language familiar to truck drivers. Tool selection guidance: use getDriverProfile for profile/location/equipment/compliance snapshot requests; use getLoadStatus for active-load timeline, stop status, ETA, and load-specific risks; use getComplianceAlerts for HOS/DVIR/permit due items; use getRouteRisks for forward-looking route hazards within a requested horizon; use getDispatchInbox for dispatch messages and open exceptions requiring action; use getCompanyFAQs for general company policy/procedure FAQs; use getPaycheckInfo for paycheck, settlement, CPM, gross/net, and miles-related compensation questions; use findNearestSwiftTerminal to check for nearby Swift yards and amenities; use checkSafetyScore to review driving telematics, harsh braking, and bonus standing; use getFuelNetworkRouting to find the next approved in-network fuel stop; use getNextLoadDetails for details on the next scheduled load, pickup/delivery windows, and pre-dispatch information. If the driver asks for data or actions outside available tools/data, unmistakably state that the request is out-of-scope of available data and provide the closest supported alternative without fabricating details. ONLY AND ALWAYS RESPOND IN ENGLISH. "
+                                "You are a Swift Transportation trucking copilot (AI Assistant). Use concise, operational language familiar to truck drivers. Tool selection guidance: use getDriverProfile for profile/location/equipment/compliance snapshot requests; use getLoadStatus for active-load timeline, stop status, ETA, and load-specific risks; use getHoursOfServiceClocks for HOS clock and break timing; use getTrafficAndWeather for immediate (1 hour) road conditions, traffic, and weather ahead; use getDispatchInbox for dispatch messages and open exceptions requiring action; use getCompanyFAQs for general company policy/procedure FAQs; use getPaycheckInfo for paycheck, settlement, CPM, gross/net, and miles-related compensation questions; use findNearestSwiftTerminal to check for nearby Swift yards and amenities; use checkSafetyScore to review driving telematics, harsh braking, and bonus standing; use getFuelNetworkRouting to find the next approved in-network fuel stop; use getNextLoadDetails for details on the next scheduled load, pickup/delivery windows, and pre-dispatch information. If the driver asks for data or actions outside available tools/data, unmistakably state that the request is out-of-scope of available data and provide the closest supported alternative without fabricating details. ONLY AND ALWAYS RESPOND IN ENGLISH. "
                             )
                         }
                     }
@@ -283,27 +279,6 @@ class GeminiWebSocketClient(
                     }
                 }
             }
-        }
-
-        val inTransKey = when {
-            contentObj.containsKey("inputTranscription") -> "inputTranscription"
-            contentObj.containsKey("input_transcription") -> "input_transcription"
-            else -> null
-        }
-        if (inTransKey != null && contentObj.containsKey(inTransKey)) {
-            onStateChanged(GeminiState.LISTENING)
-            val text = contentObj[inTransKey]!!.jsonObject["text"]!!.jsonPrimitive.content
-            onUserTextReceived(text)
-        }
-
-        val outTransKey = when {
-            contentObj.containsKey("outputTranscription") -> "outputTranscription"
-            contentObj.containsKey("output_transcription") -> "output_transcription"
-            else -> null
-        }
-        if (outTransKey != null && contentObj.containsKey(outTransKey)) {
-            val text = contentObj[outTransKey]!!.jsonObject["text"]!!.jsonPrimitive.content
-            onGeminiTextReceived(text)
         }
     }
 

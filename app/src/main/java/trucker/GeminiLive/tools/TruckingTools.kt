@@ -28,22 +28,19 @@ object TruckingTools {
                 )
             ),
             FunctionDeclaration(
-                name = "getComplianceAlerts",
-                description = "Returns deterministic compliance alerts and deadlines (HOS, DVIR, med card, IFTA, permits) from pre-authenticated session context. Invocation condition: call when the driver asks what compliance items are due, at risk, or out of policy.",
+                name = "getHoursOfServiceClocks",
+                description = "Returns deterministic Hours of Service (HOS) clock status and deadlines from pre-authenticated session context. Invocation condition: call when the driver asks about their available drive time, duty time, cycle time, or next required break.",
                 parameters = Schema(
                     type = "object",
                     properties = emptyMap()
                 )
             ),
             FunctionDeclaration(
-                name = "getRouteRisks",
-                description = "Returns deterministic route-risk intelligence for a future horizon including weather, traffic, restrictions, and stop-level risk scoring from pre-authenticated session context.",
+                name = "getTrafficAndWeather",
+                description = "Returns deterministic traffic and weather intelligence for the next 1 hour of the current route. Invocation condition: call when the driver asks about immediate road conditions, weather, or traffic ahead.",
                 parameters = Schema(
                     type = "object",
-                    properties = mapOf(
-                        "timeHorizonHours" to Schema(type = "number", description = "Hours ahead to evaluate route risk")
-                    ),
-                    required = listOf("timeHorizonHours")
+                    properties = emptyMap()
                 )
             ),
             FunctionDeclaration(
@@ -210,9 +207,15 @@ object TruckingTools {
                     })
                 }
             }
-            "getComplianceAlerts" -> {
+            "getHoursOfServiceClocks" -> {
                 buildJsonObject {
                     put("driver_id", DEMO_DRIVER_ID)
+                    put("clocks", buildJsonObject {
+                        put("drive_time_remaining", "5h 15m")
+                        put("duty_time_remaining", "8h 45m")
+                        put("cycle_time_remaining", "18h 45m")
+                        put("next_break_due_in", "2h 30m")
+                    })
                     put("alerts", buildJsonArray {
                         add(buildJsonObject {
                             put("category", "HOS")
@@ -220,43 +223,28 @@ object TruckingTools {
                             put("message", "11-hour drive limit projected in 5h 15m.")
                             put("due_by", "2026-04-15T20:05")
                         })
-                        add(buildJsonObject {
-                            put("category", "DVIR")
-                            put("severity", "info")
-                            put("message", "Pre-trip DVIR submitted. Post-trip pending.")
-                            put("due_by", "2026-04-16T03:00")
-                        })
-                        add(buildJsonObject {
-                            put("category", "IFTA")
-                            put("severity", "warning")
-                            put("message", "Fuel receipt photo missing for stop #2.")
-                            put("due_by", "2026-04-15T23:59")
-                        })
                     })
-                    put("overall_status", "attention_required")
                 }
             }
-            "getRouteRisks" -> {
-                val horizon = args?.get("timeHorizonHours")?.jsonPrimitive?.doubleOrNull ?: 6.0
+            "getTrafficAndWeather" -> {
                 buildJsonObject {
                     put("driver_id", DEMO_DRIVER_ID)
-                    put("time_horizon_hours", horizon)
+                    put("time_horizon", "1 hour")
                     put("generated_at", "2026-04-15T14:20")
-                    put("overall_risk_level", "medium")
-                    put("route_risks", buildJsonArray {
+                    put("conditions", buildJsonArray {
                         add(buildJsonObject {
-                            put("type", "weather_crosswind")
+                            put("type", "weather")
+                            put("impact", "High winds")
                             put("segment", "I-40 EB near Holbrook")
-                            put("window", "2026-04-15T16:30 to 2026-04-15T19:30")
                             put("severity", "medium")
-                            put("recommended_action", "Reduce speed 8-12 mph and increase following distance.")
+                            put("recommended_action", "Reduce speed and maintain firm grip on steering wheel.")
                         })
                         add(buildJsonObject {
-                            put("type", "traffic_congestion")
-                            put("segment", "I-40 EB Albuquerque bypass")
-                            put("window", "2026-04-15T18:10/2026-04-15T19:00")
+                            put("type", "traffic")
+                            put("impact", "Slow moving traffic")
+                            put("segment", "I-40 EB mm 185-190")
                             put("severity", "low")
-                            put("recommended_action", "Use outer bypass if average speed drops below 25 mph.")
+                            put("recommended_action", "Expect 5-10 minute delay.")
                         })
                     })
                 }
