@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.InputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -5,24 +8,22 @@ plugins {
 }
 
 val secretsPropertiesFile = rootProject.file("secrets.properties")
-val secretsProperties = java.util.Properties()
+val secretsProperties = Properties()
 if (secretsPropertiesFile.exists()) {
-    secretsPropertiesFile.inputStream().use { secretsProperties.load(it) }
+    secretsPropertiesFile.inputStream().use { input: InputStream ->
+        secretsProperties.load(input)
+    }
 }
-val geminiApiKey = secretsProperties.getProperty("GEMINI_API_KEY", "")
+val geminiApiKey: String = secretsProperties.getProperty("GEMINI_API_KEY", "")
 
 android {
     namespace = "trucker.GeminiLive"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "trucker.GeminiLive"
         minSdk = 34
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 

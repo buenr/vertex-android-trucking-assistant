@@ -96,6 +96,22 @@ object TruckingTools {
                     type = "object",
                     properties = emptyMap()
                 )
+            ),
+            FunctionDeclaration(
+                name = "getContacts",
+                description = "Returns contact information for Swift Transportation departments, Driver/Fleet Leaders, and support services. Invocation condition: call when the driver asks for phone numbers, how to reach dispatch, payroll, safety, breakdown, or their leader.",
+                parameters = Schema(
+                    type = "object",
+                    properties = emptyMap()
+                )
+            ),
+            FunctionDeclaration(
+                name = "getNextLoadDetails",
+                description = "Returns deterministic details for the next scheduled load (pre-dispatch) including pickup/delivery windows and estimated miles from pre-authenticated session context. Invocation condition: call when the driver asks about their next load, what they are doing after the current load, or for details on a pending dispatch.",
+                parameters = Schema(
+                    type = "object",
+                    properties = emptyMap()
+                )
             )
         )
     )
@@ -141,6 +157,10 @@ object TruckingTools {
                     put("load_id", DEMO_ACTIVE_LOAD_ID)
                     put("status", "in_transit")
                     put("priority", "high")
+                    put("customer", buildJsonObject {
+                        put("name", "Walmart DC #213")
+                        put("swift_csr_phone", "800-800-2200")
+                    })
                     put("origin", "Reno, NV")
                     put("destination", "Dallas, TX")
                     put("next_stop_eta", "2026-04-15T19:40")
@@ -315,6 +335,21 @@ object TruckingTools {
                                 add("Communicate delays as early as possible to allow Driver Managers to reschedule appointments.")
                             })
                         })
+                        // Common Tablet Macros
+                        add(buildJsonObject {
+                            put("category", "Common Tablet Macros")
+                            put("policy_summary", "Quick reference guide for standard in-cab communication macros.")
+                            put("details", buildJsonArray {
+                                add("Macro 1: Arrived at Shipper/Pickup.")
+                                add("Macro 2: Loaded and Leaving Shipper.")
+                                add("Macro 3: Arrived at Consignee/Delivery.")
+                                add("Macro 4: Empty and Available for Dispatch.")
+                                add("Macro 8: Request Home Time.")
+                                add("Macro 15: Request Cash Advance (for tolls/lumper).")
+                                add("Macro 22: Running Late / ETA Update.")
+                                add("Macro 55: On-Road Breakdown Report.")
+                            })
+                        })
                     })
                 }
             }
@@ -361,7 +396,7 @@ object TruckingTools {
             "checkSafetyScore" -> {
                 buildJsonObject {
                     put("driver_id", DEMO_DRIVER_ID)
-                    put("current_score", 94.5)
+                    put("current_score", 945)
                     put("status", "Green / Bonus Eligible")
                     put("company_percentile", "Top 15%")
                     put("recent_events", buildJsonArray {
@@ -370,14 +405,14 @@ object TruckingTools {
                             put("date", "2026-04-14")
                             put("location", "I-40 near Kingman, AZ")
                             put("severity", "Moderate")
-                            put("impact_on_score", "-1.5 pts")
+                            put("impact_on_score", "-3 pts")
                         })
                         add(buildJsonObject {
                             put("event_type", "Overspeed (>5mph)")
                             put("date", "2026-04-10")
                             put("location", "US-93 near Wickenburg, AZ")
                             put("severity", "Minor")
-                            put("impact_on_score", "-0.5 pts")
+                            put("impact_on_score", "-1 pts")
                         })
                     })
                 }
@@ -400,6 +435,67 @@ object TruckingTools {
                         })
                     })
                     put("restriction_warning", "Do NOT fuel at Love's or independent stops on this corridor; use only Pilot/Flying J or Swift yards.")
+                }
+            }
+
+            "getContacts" -> {
+                buildJsonObject {
+                    put("driver_id", DEMO_DRIVER_ID)
+                    put("driver_leader", buildJsonObject {
+                        put("name", "Sarah Jenkins")
+                        put("contact_method", "In-cab Macro or Driver Portal")
+                        put("phone", "(602) 269-9700 ext 4561 (Phoenix Terminal)")
+                        put("availability", "Mon-Fri 0800-1700")
+                    })
+                    put("fleet_leader", buildJsonObject {
+                        put("name", "Marcus Reynolds (Dry Van OTR)")
+                        put("contact_method", "In-cab Macro or Driver Portal")
+                    })
+                    put("departments", buildJsonArray {
+                        add(buildJsonObject {
+                            put("name", "Driver Support Services (24/7)")
+                            put("phone", "800-555-0199")
+                            put("function", "Urgent on-road needs, dispatch issues, routing")
+                        })
+                        add(buildJsonObject {
+                            put("name", "Driver Placement")
+                            put("phone", "866-588-5264")
+                            put("function", "Change fleets or discuss placement")
+                        })
+                        add(buildJsonObject {
+                            put("name", "Corporate Headquarters (Phoenix)")
+                            put("phone", "(602) 269-9700")
+                            put("address", "2200 South 75th Avenue, Phoenix, AZ 85043")
+                        })
+                        add(buildJsonObject {
+                            put("name", "On-Road Breakdown Support")
+                            put("phone", "800-555-0188")
+                            put("function", "Mechanical issues, repairs, authorization")
+                        })
+                        add(buildJsonObject {
+                            put("name", "Payroll")
+                            put("phone", "800-555-0177")
+                        })
+                    })
+                }
+            }
+
+            "getNextLoadDetails" -> {
+                buildJsonObject {
+                    put("driver_id", DEMO_DRIVER_ID)
+                    put("load_id", "902812")
+                    put("status", "pending_dispatch")
+                    put("customer", buildJsonObject {
+                        put("name", "Atlanta Distribution Center (Target)")
+                        put("swift_csr_phone", "800-800-2200")
+                    })
+                    put("origin", "Dallas, TX")
+                    put("destination", "Atlanta, GA")
+                    put("pickup_window", "2026-04-16T15:00 to 2026-04-16T19:00")
+                    put("delivery_window", "2026-04-18T08:00 to 2026-04-18T12:00")
+                    put("total_miles", 780)
+                    put("equipment_required", "53ft Dry Van")
+                    put("notes", "High value load, no unauthorized stops.")
                 }
             }
 

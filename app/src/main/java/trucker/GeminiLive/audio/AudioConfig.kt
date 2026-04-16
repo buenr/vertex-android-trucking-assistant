@@ -15,13 +15,12 @@ object AudioConfig {
     
     const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
     const val BYTES_PER_SAMPLE = 2 
-    const val INPUT_CHANNEL_COUNT = 1 
-    const val OUTPUT_CHANNEL_COUNT = 1
+    const val INPUT_CHANNEL_COUNT = 1
 
     const val TARGET_INPUT_CHUNK_MS = 20
 
-    val INPUT_AUDIO_MIME_TYPE = "audio/pcm;rate=$INPUT_SAMPLE_RATE"
+    const val INPUT_AUDIO_MIME_TYPE = "audio/pcm;rate=$INPUT_SAMPLE_RATE"
 
-    val TARGET_INPUT_CHUNK_BYTES =
+    const val TARGET_INPUT_CHUNK_BYTES =
         (INPUT_SAMPLE_RATE * INPUT_CHANNEL_COUNT * BYTES_PER_SAMPLE * TARGET_INPUT_CHUNK_MS) / 1000
 }

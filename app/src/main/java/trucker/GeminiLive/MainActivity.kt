@@ -18,7 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -119,7 +119,7 @@ fun CopilotScreen(
                     Text("START", fontSize = 32.sp, fontWeight = FontWeight.Black)
                 }
             } else {
-                StateIndicator(uiState.aiState, onToggle)
+                StateIndicator(uiState.aiState, uiState.currentTool, onToggle)
             }
         }
 
@@ -129,7 +129,7 @@ fun CopilotScreen(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 100.dp),
+                .heightIn(min = 80.dp),
             shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         ) {
@@ -147,6 +147,43 @@ fun CopilotScreen(
                         color = Color.Gray
                     )
                 }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Debug Log Console
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(0.6f),
+            shape = MaterialTheme.shapes.small,
+            color = Color.Black
+        ) {
+            val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+            LaunchedEffect(uiState.log.size) {
+                if (uiState.log.isNotEmpty()) {
+                    listState.animateScrollToItem(uiState.log.size - 1)
+                }
+            }
+            androidx.compose.foundation.lazy.LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp)
+            ) {
+                items(
+                    count = uiState.log.size,
+                    itemContent = { index ->
+                        Text(
+                            text = uiState.log[index],
+                            color = Color(0xFF00FF00), // Terminal green
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            lineHeight = 14.sp
+                        )
+                    }
+                )
             }
         }
 
@@ -175,7 +212,7 @@ fun CopilotScreen(
 }
 
 @Composable
-fun StateIndicator(state: GeminiState, onStop: () -> Unit) {
+fun StateIndicator(state: GeminiState, currentTool: String, onStop: () -> Unit) {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     
     val color = when (state) {
@@ -191,11 +228,11 @@ fun StateIndicator(state: GeminiState, onStop: () -> Unit) {
         GeminiState.LISTENING -> Icons.Default.Mic
         GeminiState.THINKING -> Icons.Default.Settings // Gear-like
         GeminiState.WORKING -> Icons.Default.Settings // Gear-like
-        GeminiState.SPEAKING -> Icons.Default.VolumeUp
+        GeminiState.SPEAKING -> Icons.AutoMirrored.Filled.VolumeUp
     }
 
     val label = when (state) {
-        GeminiState.WORKING -> "Checking Data..."
+        GeminiState.WORKING -> if (currentTool.isNotEmpty()) "Using $currentTool..." else "Checking Data..."
         else -> state.label
     }
 

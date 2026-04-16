@@ -48,7 +48,10 @@ class GeminiViewModel : ViewModel() {
                 addLog(status)
             },
             onStateChanged = { state ->
-                _uiState.value = _uiState.value.copy(aiState = state)
+                _uiState.value = _uiState.value.copy(
+                    aiState = state,
+                    currentTool = if (state != GeminiState.WORKING) "" else _uiState.value.currentTool
+                )
             },
             onReady = {
                 _uiState.value = _uiState.value.copy(status = "Connected & Listening")
@@ -73,6 +76,10 @@ class GeminiViewModel : ViewModel() {
             },
             onGeminiTextReceived = { text ->
                 _uiState.value = _uiState.value.copy(geminiText = text)
+            },
+            onToolCallStarted = { toolName ->
+                _uiState.value = _uiState.value.copy(currentTool = toolName)
+                addLog("TOOL CALL: $toolName")
             },
             onError = { error ->
                 addLog("ERROR: $error")
@@ -129,6 +136,7 @@ data class GeminiUiState(
     val status: String = "Disconnected",
     val userText: String = "",
     val geminiText: String = "",
+    val currentTool: String = "",
     val lastError: String = "",
     val log: List<String> = emptyList()
 )

@@ -18,6 +18,7 @@ class GeminiWebSocketClient(
     private val onTurnComplete: () -> Unit,
     private val onUserTextReceived: (String) -> Unit,
     private val onGeminiTextReceived: (String) -> Unit,
+    private val onToolCallStarted: (String) -> Unit,
     private val onError: (String) -> Unit
 ) {
     private val client = OkHttpClient()
@@ -108,7 +109,7 @@ class GeminiWebSocketClient(
                         addJsonObject {
                             put(
                                 "text",
-                                "You are a Swift Transportation trucking copilot (AI Assistant). Use concise, operational language familiar to truck drivers. Tool selection guidance: use getDriverProfile for profile/location/equipment/compliance snapshot requests; use getLoadStatus for active-load timeline, stop status, ETA, and load-specific risks; use getComplianceAlerts for HOS/DVIR/permit due items; use getRouteRisks for forward-looking route hazards within a requested horizon; use getDispatchInbox for dispatch messages and open exceptions requiring action; use getCompanyFAQs for general company policy/procedure FAQs; use getPaycheckInfo for paycheck, settlement, CPM, gross/net, and miles-related compensation questions; use findNearestSwiftTerminal to check for nearby Swift yards and amenities; use checkSafetyScore to review driving telematics, harsh braking, and bonus standing; use getFuelNetworkRouting to find the next approved in-network fuel stop. If the driver asks for data or actions outside available tools/data, unmistakably state that the request is out-of-scope of available data and provide the closest supported alternative without fabricating details. ONLY AND ALWAYS RESPOND IN ENGLISH. "
+                                "You are a Swift Transportation trucking copilot (AI Assistant). Use concise, operational language familiar to truck drivers. Tool selection guidance: use getDriverProfile for profile/location/equipment/compliance snapshot requests; use getLoadStatus for active-load timeline, stop status, ETA, and load-specific risks; use getComplianceAlerts for HOS/DVIR/permit due items; use getRouteRisks for forward-looking route hazards within a requested horizon; use getDispatchInbox for dispatch messages and open exceptions requiring action; use getCompanyFAQs for general company policy/procedure FAQs; use getPaycheckInfo for paycheck, settlement, CPM, gross/net, and miles-related compensation questions; use findNearestSwiftTerminal to check for nearby Swift yards and amenities; use checkSafetyScore to review driving telematics, harsh braking, and bonus standing; use getFuelNetworkRouting to find the next approved in-network fuel stop; use getNextLoadDetails for details on the next scheduled load, pickup/delivery windows, and pre-dispatch information. If the driver asks for data or actions outside available tools/data, unmistakably state that the request is out-of-scope of available data and provide the closest supported alternative without fabricating details. ONLY AND ALWAYS RESPOND IN ENGLISH. "
                             )
                         }
                     }
@@ -218,8 +219,10 @@ class GeminiWebSocketClient(
                 if (fcEl != null) {
                     val calls = fcEl.jsonArray.map { callEl ->
                         val callObj = callEl.jsonObject
+                        val name = callObj["name"]!!.jsonPrimitive.content
+                        onToolCallStarted(name)
                         FunctionCall(
-                            name = callObj["name"]!!.jsonPrimitive.content,
+                            name = name,
                             id = callObj["id"]!!.jsonPrimitive.content,
                             args = (callObj["args"] as? JsonObject)?.mapValues { it.value }
                         )
