@@ -82,8 +82,8 @@ object TruckingTools {
                 )
             ),
             FunctionDeclaration(
-                name = "checkInGaugeSafetyScore",
-                description = "Returns the driver's current InGauge safety score, ranking, and recent telemetry events (e.g., hard braking, overspeeding). Invocation condition: call when the driver asks about their driving score, safety record, or bonus standing.",
+                name = "checkSafetyScore",
+                description = "Returns the driver's current safety score, ranking, and recent telemetry events (e.g., hard braking, overspeeding). Invocation condition: call when the driver asks about their driving score, safety record, or bonus standing.",
                 parameters = Schema(
                     type = "object",
                     properties = emptyMap()
@@ -358,7 +358,7 @@ object TruckingTools {
                 }
             }
             
-            "checkInGaugeSafetyScore" -> {
+            "checkSafetyScore" -> {
                 buildJsonObject {
                     put("driver_id", DEMO_DRIVER_ID)
                     put("current_score", 94.5)
