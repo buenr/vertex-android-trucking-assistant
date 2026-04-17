@@ -20,15 +20,84 @@ class GeminiViewModel : ViewModel() {
     private val audioPlayer = AudioPlayer()
     private lateinit var geminiClient: GeminiWebSocketClient
     private var interruptionJob: Job? = null
+    private var isRecording = false
 
-    private fun addLog(message: String) {
-        val timestamped = "[${System.currentTimeMillis() % 100000}] $message"
-        _uiState.value = _uiState.value.copy(
-            log = _uiState.value.log + timestamped
+    init {
+        geminiClient = GeminiWebSocketClient(
+            apiKey = trucker.GeminiLive.BuildConfig.GEMINI_API_KEY,
+            onStatusUpdate = { status ->
+                updateUi { it.copy(status = status) }
+                addLog(status)
+            },
+            onStateChanged = { state ->
+                updateUi { 
+                    it.copy(
+                        aiState = state,
+                        currentTool = if (state != GeminiState.WORKING) "" else it.currentTool
+                    ) 
+                }
+            },
+            onReady = {
+                updateUi { it.copy(status = "Connected & Listening") }
+                addLog("Ready — starting mic")
+                startRecorder()
+            },
+            onAudioReceived = { audioData ->
+                audioPlayer.play(audioData)
+                if (interruptionJob != null) {
+                    viewModelScope.launch {
+                        interruptionJob?.cancel()
+                        interruptionJob = null
+                    }
+                }
+            },
+            onInterrupted = {
+                viewModelScope.launch {
+                    interruptionJob?.cancel()
+                    interruptionJob = launch {
+                        delay(200)
+                        audioPlayer.flush()
+                        addLog("Interruption confirmed")
+                        interruptionJob = null
+                    }
+                    addLog("Interrupted — waiting grace period")
+                    startRecorder()
+                }
+            },
+            onTurnComplete = {
+                viewModelScope.launch {
+                    interruptionJob?.cancel()
+                    interruptionJob = null
+                    addLog("Turn complete — resuming mic")
+                    startRecorder()
+                }
+            },
+            onToolCallStarted = { toolName ->
+                updateUi { it.copy(currentTool = toolName) }
+                addLog("TOOL CALL: $toolName")
+            },
+            onError = { error ->
+                addLog("ERROR: $error")
+                updateUi { it.copy(lastError = error, status = "Error") }
+                stop()
+            }
         )
     }
 
-    private var isRecording = false
+    private fun updateUi(reducer: (GeminiUiState) -> GeminiUiState) {
+        viewModelScope.launch {
+            _uiState.value = reducer(_uiState.value)
+        }
+    }
+
+    private fun addLog(message: String) {
+        viewModelScope.launch {
+            val timestamped = "[${System.currentTimeMillis() % 100000}] $message"
+            _uiState.value = _uiState.value.copy(
+                log = (_uiState.value.log + timestamped).takeLast(100)
+            )
+        }
+    }
 
     private fun startRecorder() {
         if (isRecording) return
@@ -45,61 +114,6 @@ class GeminiViewModel : ViewModel() {
         geminiClient.sendAudioStreamEnd()
     }
 
-    init {
-        geminiClient = GeminiWebSocketClient(
-            apiKey = trucker.GeminiLive.BuildConfig.GEMINI_API_KEY,
-            onStatusUpdate = { status ->
-                _uiState.value = _uiState.value.copy(status = status)
-                addLog(status)
-            },
-            onStateChanged = { state ->
-                _uiState.value = _uiState.value.copy(
-                    aiState = state,
-                    currentTool = if (state != GeminiState.WORKING) "" else _uiState.value.currentTool
-                )
-            },
-            onReady = {
-                _uiState.value = _uiState.value.copy(status = "Connected & Listening")
-                addLog("Ready — audio recorder starting")
-                startRecorder()
-            },
-            onAudioReceived = { audioData ->
-                if (interruptionJob != null) {
-                    interruptionJob?.cancel()
-                    interruptionJob = null
-                }
-                audioPlayer.play(audioData)
-            },
-            onInterrupted = {
-                // Graceful interruption: wait 200ms to see if it's transient noise
-                interruptionJob?.cancel()
-                interruptionJob = viewModelScope.launch {
-                    delay(200)
-                    audioPlayer.flush()
-                    addLog("Interruption confirmed — flushing audio")
-                    interruptionJob = null
-                }
-                addLog("Model interrupted — waiting 200ms grace period")
-                startRecorder()
-            },
-            onTurnComplete = {
-                interruptionJob?.cancel()
-                interruptionJob = null
-                addLog("Turn complete — resuming mic")
-                startRecorder()
-            },
-            onToolCallStarted = { toolName ->
-                _uiState.value = _uiState.value.copy(currentTool = toolName)
-                addLog("TOOL CALL: $toolName")
-            },
-            onError = { error ->
-                addLog("ERROR: $error")
-                _uiState.value = _uiState.value.copy(lastError = error, status = "Error")
-                stop()
-            }
-        )
-    }
-
     fun toggleConnection() {
         if (uiState.value.isConnected) {
             stop()
@@ -109,19 +123,22 @@ class GeminiViewModel : ViewModel() {
     }
 
     private fun start() {
+        // Immediate reset for a clean start
         _uiState.value = _uiState.value.copy(
             isConnected = true,
             status = "Connecting...",
+            aiState = GeminiState.IDLE,
+            currentTool = "",
             log = emptyList(),
             lastError = "",
             userText = "",
             geminiText = ""
         )
-        addLog("Starting connection...")
+        addLog("Starting session...")
         try {
             geminiClient.connect()
         } catch (e: Exception) {
-            _uiState.value = _uiState.value.copy(status = "Failed", lastError = e.message ?: "Unknown error")
+            updateUi { it.copy(status = "Failed", lastError = e.message ?: "Unknown error") }
             addLog("Connection failed: ${e.message}")
         }
     }
@@ -133,8 +150,9 @@ class GeminiViewModel : ViewModel() {
         audioRecorder.stop()
         audioPlayer.stop()
         geminiClient.disconnect()
-        addLog("Disconnected")
-        _uiState.value = _uiState.value.copy(isConnected = false, status = "Disconnected")
+        
+        updateUi { it.copy(isConnected = false, status = "Disconnected") }
+        addLog("Session stopped")
     }
 
     override fun onCleared() {

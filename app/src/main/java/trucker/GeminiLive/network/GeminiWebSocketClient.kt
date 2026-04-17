@@ -7,6 +7,7 @@ import okhttp3.*
 import okio.ByteString
 import trucker.GeminiLive.audio.AudioConfig
 import trucker.GeminiLive.tools.TruckingTools
+import java.util.concurrent.TimeUnit
 
 class GeminiWebSocketClient(
     private val apiKey: String,
@@ -19,7 +20,14 @@ class GeminiWebSocketClient(
     private val onToolCallStarted: (String) -> Unit,
     private val onError: (String) -> Unit
 ) {
-    private val client = OkHttpClient()
+    companion object {
+        private val sharedClient = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.SECONDS)
+            .writeTimeout(0, TimeUnit.SECONDS)
+            .build()
+    }
+
     private var webSocket: WebSocket? = null
     private var isReady = false
     private var isModelSpeaking = false
@@ -27,29 +35,32 @@ class GeminiWebSocketClient(
 
     private val wsListener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            if (webSocket != this@GeminiWebSocketClient.webSocket) return
             Log.d("GeminiWS", "WebSocket Connected")
             onStatusUpdate("WebSocket open, sending config...")
             sendSetup()
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
-            Log.d("GeminiWS", "Received text message: $text")
-            onStatusUpdate("Recv text: ${text.take(300)}")
+            if (webSocket != this@GeminiWebSocketClient.webSocket) return
+            Log.d("GeminiWS", "Received text message: ${text.take(100)}...")
+            onStatusUpdate("Recv text: ${text.take(100)}")
             handleRawMessage(text)
         }
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+            if (webSocket != this@GeminiWebSocketClient.webSocket) return
             Log.d("GeminiWS", "Received binary message: ${bytes.size} bytes")
             onStatusUpdate("Recv binary: ${bytes.size} bytes")
             try {
-                val text = bytes.utf8()
-                handleRawMessage(text)
+                handleRawMessage(bytes.utf8())
             } catch (e: Exception) {
                 onStatusUpdate("Binary parse error: ${e.message}")
             }
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            if (webSocket != this@GeminiWebSocketClient.webSocket) return
             val errorMsg = "WebSocket failure: ${t.message}"
             Log.e("GeminiWS", errorMsg, t)
             isReady = false
@@ -57,24 +68,29 @@ class GeminiWebSocketClient(
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            if (webSocket != this@GeminiWebSocketClient.webSocket) return
             Log.d("GeminiWS", "WebSocket Closing: $reason (code: $code)")
-            onStatusUpdate("Server closing connection ($code): $reason")
+            onStatusUpdate("Server closing connection ($code)")
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            if (webSocket != this@GeminiWebSocketClient.webSocket) return
             Log.d("GeminiWS", "WebSocket Closed: $reason (code: $code)")
             isReady = false
             if (code != 1000) {
-                onError("Connection closed unexpectedly ($code): $reason")
+                onError("Connection closed unexpectedly ($code)")
             }
         }
     }
 
     fun connect() {
+        disconnect()
+        isModelSpeaking = false
+        isReady = false
         try {
             val url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=$apiKey"
             val request = Request.Builder().url(url).build()
-            webSocket = client.newWebSocket(request, wsListener)
+            webSocket = sharedClient.newWebSocket(request, wsListener)
         } catch (e: Exception) {
             onError("Connection Error: ${e.message}")
         }
@@ -95,9 +111,6 @@ class GeminiWebSocketClient(
                                 put("voiceName", "Aoede")
                             }
                         }
-                    }
-                    putJsonObject("thinkingConfig") {
-                        put("thinkingLevel", "LOW")
                     }
                 }
                 putJsonObject("systemInstruction") {
@@ -138,13 +151,13 @@ class GeminiWebSocketClient(
         }
 
         val text = setupJson.toString()
-        Log.d("GeminiWS", "Sending setup: $text")
-        onStatusUpdate("Setup sent (${text.length} chars), waiting...")
+        Log.d("GeminiWS", "Sending setup")
+        onStatusUpdate("Setup sent, waiting...")
         webSocket?.send(text)
     }
 
     fun sendAudio(audioData: ByteArray) {
-        if (isModelSpeaking) return // Drop mic input while model is speaking to avoid echo
+        if (!isReady || isModelSpeaking) return 
         val base64Audio = Base64.encodeToString(audioData, Base64.NO_WRAP)
         val audioMessage = buildJsonObject {
             putJsonObject("realtimeInput") {
@@ -158,17 +171,18 @@ class GeminiWebSocketClient(
     }
 
     fun sendAudioStreamEnd() {
+        if (!isReady) return
         val endMessage = buildJsonObject {
             putJsonObject("realtimeInput") {
                 put("audioStreamEnd", true)
             }
         }
         webSocket?.send(endMessage.toString())
-        Log.d("GeminiWS", "Sent audioStreamEnd")
         onStateChanged(GeminiState.THINKING)
     }
 
     fun sendText(text: String) {
+        if (!isReady) return
         val textMessage = buildJsonObject {
             putJsonObject("realtimeInput") {
                 put("text", text)
@@ -182,15 +196,12 @@ class GeminiWebSocketClient(
         try {
             val element = json.parseToJsonElement(text).jsonObject
 
-            // Check setupComplete in any casing
             if (element.containsKey("setupComplete") || element.containsKey("setup_complete")) {
-                Log.d("GeminiWS", "Setup Complete received")
                 isReady = true
-                onStatusUpdate("Setup complete!")
+                onStatusUpdate("Ready")
                 onReady()
             }
 
-            // Check for error
             val errorEl = element["error"] ?: element["Error"]
             if (errorEl != null) {
                 val errorObj = errorEl.jsonObject
@@ -201,13 +212,11 @@ class GeminiWebSocketClient(
                 return
             }
 
-            // Check serverContent
             val scEl = element["serverContent"] ?: element["server_content"]
             if (scEl != null) {
                 handleServerContent(scEl.jsonObject)
             }
 
-            // Check toolCall
             val tcEl = element["toolCall"] ?: element["tool_call"]
             if (tcEl != null) {
                 val tcObj = tcEl.jsonObject
@@ -228,57 +237,42 @@ class GeminiWebSocketClient(
             }
         } catch (e: Exception) {
             Log.e("GeminiWS", "Error parsing message", e)
-            onStatusUpdate("Parse error: ${e.message}")
         }
     }
 
     private fun handleServerContent(contentObj: JsonObject) {
-        // Handle interruption — flush audio playback, mark turn ended
-        val interruptedEl = contentObj["interrupted"]
-        if (interruptedEl?.jsonPrimitive?.booleanOrNull == true) {
-            Log.d("GeminiWS", "Model interrupted")
-            isModelSpeaking = false
-            onStateChanged(GeminiState.IDLE)
-            onInterrupted()
-        }
-
-        // Detect turn complete — resume mic
-        val turnCompleteEl = contentObj["turnComplete"]
-        if (turnCompleteEl?.jsonPrimitive?.booleanOrNull == true) {
-            Log.d("GeminiWS", "Turn complete")
-            isModelSpeaking = false
-            onStateChanged(GeminiState.IDLE)
-            onTurnComplete()
-        }
-
-        val modelTurnKey = when {
-            contentObj.containsKey("modelTurn") -> "modelTurn"
-            contentObj.containsKey("model_turn") -> "model_turn"
-            else -> null
-        }
-        if (modelTurnKey != null && contentObj.containsKey(modelTurnKey)) {
+        val modelTurnKey = if (contentObj.containsKey("modelTurn")) "modelTurn" else "model_turn"
+        if (contentObj.containsKey(modelTurnKey)) {
             isModelSpeaking = true
             onStateChanged(GeminiState.SPEAKING)
-            val partsKey = when {
-                contentObj[modelTurnKey]!!.jsonObject.containsKey("parts") -> "parts"
-                else -> null
-            }
+            val turnObj = contentObj[modelTurnKey]!!.jsonObject
+            val partsKey = if (turnObj.containsKey("parts")) "parts" else null
             if (partsKey != null) {
-                val parts = contentObj[modelTurnKey]!!.jsonObject[partsKey]!!.jsonArray
+                val parts = turnObj[partsKey]!!.jsonArray
                 for (partEl in parts) {
                     val partObj = partEl.jsonObject
-                    val inlineKey = when {
-                        partObj.containsKey("inlineData") -> "inlineData"
-                        partObj.containsKey("inline_data") -> "inline_data"
-                        else -> null
-                    }
-                    if (inlineKey != null) {
+                    val inlineKey = if (partObj.containsKey("inlineData")) "inlineData" else "inline_data"
+                    if (partObj.containsKey(inlineKey)) {
                         val inlineObj = partObj[inlineKey]!!.jsonObject
                         val audioBytes = Base64.decode(inlineObj["data"]!!.jsonPrimitive.content, Base64.DEFAULT)
                         onAudioReceived(audioBytes)
                     }
                 }
             }
+        }
+
+        val interruptedEl = contentObj["interrupted"]
+        if (interruptedEl?.jsonPrimitive?.booleanOrNull == true) {
+            isModelSpeaking = false
+            onStateChanged(GeminiState.IDLE)
+            onInterrupted()
+        }
+
+        val turnCompleteEl = contentObj["turnComplete"]
+        if (turnCompleteEl?.jsonPrimitive?.booleanOrNull == true) {
+            isModelSpeaking = false
+            onStateChanged(GeminiState.IDLE)
+            onTurnComplete()
         }
     }
 
@@ -299,12 +293,12 @@ class GeminiWebSocketClient(
             }
         }
         webSocket?.send(responseMessage.toString())
-        Log.d("GeminiWS", "Sent tool responses: $responseMessage")
     }
 
     fun disconnect() {
         isReady = false
-        webSocket?.close(1000, "App closed")
+        isModelSpeaking = false
+        webSocket?.close(1000, "Disconnect")
         webSocket = null
     }
 }

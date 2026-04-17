@@ -15,8 +15,11 @@ class AudioPlayer {
 
     private val lock = Any()
 
-    init {
+    private fun ensureInitialized(): Boolean {
         synchronized(lock) {
+            if (audioTrack != null && audioTrack?.state == AudioTrack.STATE_INITIALIZED) {
+                return true
+            }
             try {
                 audioTrack = AudioTrack.Builder()
                     .setAudioAttributes(
@@ -37,14 +40,17 @@ class AudioPlayer {
                     .build()
 
                 audioTrack?.play()
+                return true
             } catch (e: Exception) {
                 Log.e("AudioPlayer", "AudioTrack initialization failed", e)
+                return false
             }
         }
     }
 
     fun play(audioData: ByteArray) {
         synchronized(lock) {
+            if (!ensureInitialized()) return
             try {
                 audioTrack?.write(audioData, 0, audioData.size)
             } catch (e: Exception) {
@@ -57,8 +63,11 @@ class AudioPlayer {
         synchronized(lock) {
             try {
                 audioTrack?.apply {
-                    if (state == AudioTrack.STATE_INITIALIZED && playState == AudioTrack.PLAYSTATE_PLAYING) {
-                        stop()
+                    if (state == AudioTrack.STATE_INITIALIZED) {
+                        // To flush, we stop, then flush, then play again
+                        if (playState == AudioTrack.PLAYSTATE_PLAYING) {
+                            stop()
+                        }
                         flush()
                         play()
                     }
@@ -74,7 +83,11 @@ class AudioPlayer {
             try {
                 audioTrack?.apply {
                     if (state == AudioTrack.STATE_INITIALIZED) {
-                        stop()
+                        try {
+                            if (playState == AudioTrack.PLAYSTATE_PLAYING) {
+                                stop()
+                            }
+                        } catch (e: Exception) {}
                         release()
                     }
                 }
