@@ -109,6 +109,22 @@ object TruckingTools {
                     type = "object",
                     properties = emptyMap()
                 )
+            ),
+            FunctionDeclaration(
+                name = "getMentorFAQs",
+                description = "Returns details about how to become a driver mentor, benefits of mentoring, and requirements. Invocation condition: call when the driver asks about becoming a mentor, training new drivers, or mentor pay.",
+                parameters = Schema(
+                    type = "object",
+                    properties = emptyMap()
+                )
+            ),
+            FunctionDeclaration(
+                name = "getOwnerOperatorFAQs",
+                description = "Returns details about becoming an owner-operator at Swift, including lease options, pay structure (percentage-based), and equipment perks. Invocation condition: call when the driver asks about owning their own truck, leasing, or becoming their own boss.",
+                parameters = Schema(
+                    type = "object",
+                    properties = emptyMap()
+                )
             )
         )
     )
@@ -285,12 +301,13 @@ object TruckingTools {
                         // Dog / Pet Policy
                         add(buildJsonObject {
                             put("category", "Pet Policy")
-                            put("policy_summary", "Swift allows one dog (under 75 lbs) for company drivers.")
+                            put("policy_summary", "Swift allows company drivers to bring one dog, weighing 40 pounds or less.")
                             put("details", buildJsonArray {
-                                add("Requires a non-refundable $500 pet fee (payable via payroll deduction).")
-                                add("Dog must be up to date on vaccinations.")
-                                add("Restricted breeds: Pit Bulls, Rottweilers, Dobermans, Mastiffs.")
-                                add("Pet must be leashed at all Swift terminals and customer locations.")
+                                add("Pet Type: Dogs only (no cats, birds, or exotic animals).")
+                                add("Weight Restriction: Maximum 40 pounds.")
+                                add("Required Documentation: Valid vaccination records and a rabies certificate.")
+                                add("Approval Process: Terminal leader approval is mandatory.")
+                                add("Pets must be well-behaved and house-trained.")
                             })
                         })
                         // Rider Policy
@@ -336,6 +353,15 @@ object TruckingTools {
                                 add("Macro 15: Request Cash Advance (for tolls/lumper).")
                                 add("Macro 22: Running Late / ETA Update.")
                                 add("Macro 55: On-Road Breakdown Report.")
+                            })
+                        })
+                        // Headset Recommendations
+                        add(buildJsonObject {
+                            put("category", "Headset Recommendations")
+                            put("policy_summary", "FMCSA regulations require hands-free devices. Headsets must leave one ear open to hear emergency signals.")
+                            put("details", buildJsonArray {
+                                add("BlueParrott B450-XT: 96% noise cancellation, 24h battery, 300ft range. Price: $160 - $180.")
+                                add("Blue Tiger Elite Ultra 2.0: 96% noise cancellation, 60h talk time. Price: $210 - $230.")
                             })
                         })
                     })
@@ -484,6 +510,76 @@ object TruckingTools {
                     put("total_miles", 780)
                     put("equipment_required", "53ft Dry Van")
                     put("notes", "High value load, no unauthorized stops.")
+                }
+            }
+
+            "getMentorFAQs" -> {
+                buildJsonObject {
+                    put("program_name", "Swift Driver Mentor Program")
+                    put("overview", "Pass along your knowledge to the next generation of drivers while enhancing your own earning potential.")
+                    put("benefits", buildJsonArray {
+                        add("Boost earning potential: Top 25% of mentors make $100,000 annually.")
+                        add("Build connections and take control of your career path.")
+                        add("Share valuable knowledge with new drivers.")
+                    })
+                    put("requirements", buildJsonArray {
+                        add("Class A CDL.")
+                        add("Solid, safe driving record.")
+                        add("Certain amount of time on the road (determined by leadership).")
+                        add("Approval from Driver Leader, Terminal Leader, and Safety Leader.")
+                    })
+                    put("steps_to_join", buildJsonArray {
+                        add("Step 1: Talk with your Driver Leader about joining the program.")
+                        add("Step 2: Apply online via the Driver Portal.")
+                        add("Step 3: Enroll in Swift University's 'Driver Certification Mentor Program' upon approval.")
+                    })
+                    put("faqs", buildJsonArray {
+                        add(buildJsonObject {
+                            put("question", "How do I know if I qualify?")
+                            put("answer", "Your Driver Leader, Terminal Leader, and Safety Leader will let you know based on your experience and record.")
+                        })
+                        add(buildJsonObject {
+                            put("question", "Do I have to train all the time?")
+                            put("answer", "Full-time training is welcome but not required. You can train part-time and drive solo in between students.")
+                        })
+                        add(buildJsonObject {
+                            put("question", "Should I be concerned about personal space?")
+                            put("answer", "Discuss personal boundaries and cab etiquette with new students. Be courteous and allow for personal space.")
+                        })
+                        add(buildJsonObject {
+                            put("question", "Can I mentor even though I don't drive OTR?")
+                            put("answer", "Yes, most lines of business at Swift have mentors. Talk with leadership to confirm.")
+                        })
+                    })
+                }
+            }
+
+            "getOwnerOperatorFAQs" -> {
+                buildJsonObject {
+                    put("program_name", "Swift Owner-Operator Program")
+                    put("value_proposition", "Unlock your entrepreneurial spirit and take control of your destiny by becoming your own boss.")
+                    put("financial_perks", buildJsonArray {
+                        add("No credit checks: Accessible regardless of credit history.")
+                        add("$0 down lease options: Start your journey without upfront costs.")
+                        add("Percentage-based pay: 70% of the market rate for each load.")
+                        add("Fuel surcharges: Based on the national average to keep net fuel costs stable.")
+                    })
+                    put("equipment_and_tech", buildJsonArray {
+                        add("Late model trucks: Freightliner, Kenworth, Peterbilt, Volvo, and International.")
+                        add("Opti-Idle & Heating: Optimal fuel savings and cab comfort.")
+                        add("Tech suite: Geotab tablets and Netradyne outward-facing dash cameras.")
+                        add("Customization: Personalized decal package options.")
+                    })
+                    put("support_network", buildJsonArray {
+                        add("Owner-Operator Load Board: View and book your own loads (Dry OTR).")
+                        add("24/7 On-Road support and Rapid Response team.")
+                        add("Access to 50+ shops and terminals with free parking and reduced shop rates ($80/hr).")
+                    })
+                    put("how_to_start", buildJsonObject {
+                        put("action", "Contact a Recruiter")
+                        put("phone", "877-772-1846")
+                        put("text", "602-559-1675")
+                    })
                 }
             }
 
