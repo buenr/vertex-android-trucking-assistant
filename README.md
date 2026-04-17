@@ -1,6 +1,6 @@
-# Gemini Android Trucking Assistant
+# Vertex Android Trucking Assistant
 
-A hands-free, voice-activated "CB Radio" style AI assistant designed specifically for truck drivers. It leverages the **Gemini 3.1 Flash Live API** over WebSockets to provide real-time, bi-directional voice interaction natively on Android devices (like the Samsung Galaxy Tab Active 5).
+A hands-free, voice-activated "CB Radio" style AI assistant designed specifically for truck drivers. It leverages **Vertex AI (Enterprise)** over WebSockets using the **`gemini-live-2.5-flash-preview-native-audio-09-2025`** model to provide real-time, bi-directional voice interaction natively on Android devices (like the Samsung Galaxy Tab Active 5).
 
 ## App Logic & Architecture
 
@@ -13,7 +13,7 @@ The application is built completely natively in Kotlin using Jetpack Compose and
 
 ### Network Layer
 
-*   **`network/GeminiWebSocketClient.kt`**: The workhorse of the application. It opens a persistant OkHttp WebSocket connection to the Google Generative Language `BidiGenerateContent` endpoint. Upon connecting, it sends a configuration payload configuring it for `AUDIO` responsiveness and provides the system instructions (prompting it to act as a Swift Transportation trucking copilot). It handles routing inbound messages (dispatching audio to playback, parsing text transcripts, handling server tool calls).
+*   **`network/GeminiWebSocketClient.kt`**: The workhorse of the application. It opens a persistent OkHttp WebSocket connection to the Vertex AI `LlmBidiService/BidiGenerateContent` endpoint. Upon connecting, it sends a configuration payload configuring the `gemini-live-2.5-flash-preview-native-audio-09-2025` model for `AUDIO` responsiveness and provides the system instructions (prompting it to act as a Swift Transportation trucking copilot). It handles routing inbound messages (dispatching audio to playback, parsing text transcripts, handling server tool calls).
 *   **`network/GeminiModels.kt`**: Contains the data classes and enums mapping to the Gemini WebSocket JSON protocol (such as `FunctionDeclaration`, `ToolCall`, and `GeminiState`).
 
 ### Audio Pipeline
@@ -54,9 +54,6 @@ With the tools implemented above, the driver can naturally ask the copilot quest
 
 ## Setup Instructions
 
-1. Ensure you have the `secrets.properties` file in your project root folder (next to `local.properties`).
-2. Add your Gemini API key:
-   ```properties
-   GEMINI_API_KEY=...
-   ```
+1. Download your Vertex AI service account JSON key file.
+2. Rename the file to `[project_name].json` and place it in the `app/src/main/assets/` directory. (Note: `*.json` files in this directory are ignored by Git to prevent accidental uploads).
 3. Sync Gradle and build the project.
