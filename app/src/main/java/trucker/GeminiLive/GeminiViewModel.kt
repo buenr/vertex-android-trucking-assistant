@@ -11,20 +11,24 @@ import trucker.GeminiLive.audio.AudioPlayer
 import trucker.GeminiLive.audio.AudioRecorder
 import trucker.GeminiLive.network.GeminiState
 import trucker.GeminiLive.network.GeminiWebSocketClient
+import trucker.GeminiLive.network.VertexAuth
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 
-class GeminiViewModel : ViewModel() {
+class GeminiViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = mutableStateOf(GeminiUiState())
     val uiState: State<GeminiUiState> = _uiState
 
     private val audioRecorder = AudioRecorder()
     private val audioPlayer = AudioPlayer()
-    private lateinit var geminiClient: GeminiWebSocketClient
+    private var geminiClient: GeminiWebSocketClient
     private var interruptionJob: Job? = null
     private var isRecording = false
 
     init {
+        val projectId = VertexAuth.getProjectId(application)
         geminiClient = GeminiWebSocketClient(
-            apiKey = trucker.GeminiLive.BuildConfig.GEMINI_API_KEY,
+            projectId = projectId,
             onStatusUpdate = { status ->
                 updateUi { it.copy(status = status) }
                 addLog(status)
@@ -135,11 +139,14 @@ class GeminiViewModel : ViewModel() {
             geminiText = ""
         )
         addLog("Starting session...")
-        try {
-            geminiClient.connect()
-        } catch (e: Exception) {
-            updateUi { it.copy(status = "Failed", lastError = e.message ?: "Unknown error") }
-            addLog("Connection failed: ${e.message}")
+        viewModelScope.launch {
+            try {
+                val token = VertexAuth.getAccessToken(getApplication())
+                geminiClient.connect(token)
+            } catch (e: Exception) {
+                updateUi { it.copy(status = "Failed", lastError = e.message ?: "Unknown error") }
+                addLog("Connection failed: ${e.message}")
+            }
         }
     }
 

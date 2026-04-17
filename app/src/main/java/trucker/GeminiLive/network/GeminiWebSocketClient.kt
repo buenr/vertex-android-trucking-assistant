@@ -10,7 +10,7 @@ import trucker.GeminiLive.tools.TruckingTools
 import java.util.concurrent.TimeUnit
 
 class GeminiWebSocketClient(
-    private val apiKey: String,
+    private val projectId: String,
     private val onStatusUpdate: (String) -> Unit,
     private val onStateChanged: (GeminiState) -> Unit,
     private val onReady: () -> Unit,
@@ -83,13 +83,16 @@ class GeminiWebSocketClient(
         }
     }
 
-    fun connect() {
+    fun connect(accessToken: String) {
         disconnect()
         isModelSpeaking = false
         isReady = false
         try {
-            val url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=$apiKey"
-            val request = Request.Builder().url(url).build()
+            val url = "wss://us-central1-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1beta1.LlmBidiService/BidiGenerateContent"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $accessToken")
+                .build()
             webSocket = sharedClient.newWebSocket(request, wsListener)
         } catch (e: Exception) {
             onError("Connection Error: ${e.message}")
@@ -99,7 +102,7 @@ class GeminiWebSocketClient(
     private fun sendSetup() {
         val setupJson = buildJsonObject {
             putJsonObject("setup") {
-                put("model", "models/gemini-3.1-flash-live-preview")
+                put("model", "projects/$projectId/locations/us-central1/publishers/google/models/gemini-live-2.5-flash-preview-native-audio-09-2025")
                 putJsonObject("generationConfig") {
                     putJsonArray("responseModalities") {
                         add("AUDIO")
@@ -278,21 +281,29 @@ class GeminiWebSocketClient(
 
     private fun handleToolCall(toolCall: ToolCall) {
         onStateChanged(GeminiState.WORKING)
-        val responseMessage = buildJsonObject {
-            putJsonObject("toolResponse") {
-                putJsonArray("functionResponses") {
-                    toolCall.functionCalls.forEach { call ->
-                        val result = TruckingTools.handleToolCall(call.name, call.args)
-                        addJsonObject {
-                            put("name", call.name)
-                            put("id", call.id)
-                            put("response", result)
+        // Simulate real-world latency with a 2-second delay; remove this in production
+        sharedClient.dispatcher.executorService.execute {
+            try {
+                Thread.sleep(2000)
+                val responseMessage = buildJsonObject {
+                    putJsonObject("toolResponse") {
+                        putJsonArray("functionResponses") {
+                            toolCall.functionCalls.forEach { call ->
+                                val result = TruckingTools.handleToolCall(call.name, call.args)
+                                addJsonObject {
+                                    put("name", call.name)
+                                    put("id", call.id)
+                                    put("response", result)
+                                }
+                            }
                         }
                     }
                 }
+                webSocket?.send(responseMessage.toString())
+            } catch (e: Exception) {
+                Log.e("GeminiWS", "Error sending delayed tool response", e)
             }
         }
-        webSocket?.send(responseMessage.toString())
     }
 
     fun disconnect() {
