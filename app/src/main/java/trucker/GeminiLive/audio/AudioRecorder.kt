@@ -1,4 +1,4 @@
-package trucker.GeminiLive.audio
+package trucker.geminilive.audio
 
 import android.annotation.SuppressLint
 import android.media.AudioFormat
@@ -165,3 +165,7 @@ class AudioRecorder {
         }
     }
 }
+
+
+
+

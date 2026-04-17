@@ -1,19 +1,19 @@
-package trucker.GeminiLive
+package trucker.geminilive
 
+import android.app.Application
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import trucker.GeminiLive.audio.AudioPlayer
-import trucker.GeminiLive.audio.AudioRecorder
-import trucker.GeminiLive.network.GeminiState
-import trucker.GeminiLive.network.GeminiWebSocketClient
-import trucker.GeminiLive.network.VertexAuth
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import trucker.geminilive.audio.AudioPlayer
+import trucker.geminilive.audio.AudioRecorder
+import trucker.geminilive.audio.SoundManager
+import trucker.geminilive.network.GeminiState
+import trucker.geminilive.network.GeminiWebSocketClient
+import trucker.geminilive.network.VertexAuth
 
 class GeminiViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = mutableStateOf(GeminiUiState())
@@ -21,8 +21,11 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
 
     private val audioRecorder = AudioRecorder()
     private val audioPlayer = AudioPlayer()
+    private val soundManager = SoundManager()
     private var geminiClient: GeminiWebSocketClient
     private var interruptionJob: Job? = null
+    private var toolTimerJob: Job? = null
+    private var pendingState: GeminiState? = null
     private var isRecording = false
 
     init {
@@ -34,11 +37,50 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
                 addLog(status)
             },
             onStateChanged = { state ->
-                updateUi { 
-                    it.copy(
-                        aiState = state,
-                        currentTool = if (state != GeminiState.WORKING) "" else it.currentTool
-                    ) 
+                // If the 3-second processing timer is running, just queue the state change
+                if (toolTimerJob != null) {
+                    pendingState = state
+                } else {
+                    // Handle state transitions with synchronization for WORKING state
+                    when (state) {
+                        GeminiState.WORKING -> {
+                            pendingState = state
+                            updateUi { it.copy(aiState = state) }
+                            // Start 3-second synchronized delay
+                            audioPlayer.startBuffering()
+                            soundManager.startWorkingLoop()
+
+                            toolTimerJob?.cancel()
+                            toolTimerJob = viewModelScope.launch {
+                                delay(3000)
+                                // 3 seconds are up: release buffer and stop chime
+                                soundManager.stopLoop()
+                                audioPlayer.stopBufferingAndPlay()
+                                toolTimerJob = null
+
+                                // Apply the most recent state that arrived while we were waiting
+                                pendingState?.let { lastState ->
+                                    updateUi { it.copy(aiState = lastState) }
+                                }
+                            }
+                        }
+                        GeminiState.THINKING -> {
+                            pendingState = state
+                            updateUi { it.copy(aiState = state) }
+                            soundManager.startThinkingLoop()
+                        }
+                        else -> {
+
+                            pendingState = state
+                            updateUi {
+                                it.copy(
+                                    aiState = state,
+                                    currentTool = if (state != GeminiState.WORKING) "" else it.currentTool
+                                )
+                            }
+                            soundManager.stopLoop()
+                        }
+                    }
                 }
             },
             onReady = {
@@ -153,9 +195,12 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
     private fun stop() {
         interruptionJob?.cancel()
         interruptionJob = null
-        isRecording = false
-        audioRecorder.stop()
+        toolTimerJob?.cancel()
+        toolTimerJob = null
+        pendingState = null
+        stopRecorder()
         audioPlayer.stop()
+        soundManager.stopLoop()
         geminiClient.disconnect()
         
         updateUi { it.copy(isConnected = false, status = "Disconnected") }
@@ -165,6 +210,7 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
     override fun onCleared() {
         super.onCleared()
         stop()
+        soundManager.release()
     }
 }
 
@@ -178,3 +224,7 @@ data class GeminiUiState(
     val lastError: String = "",
     val log: List<String> = emptyList()
 )
+
+
+
+

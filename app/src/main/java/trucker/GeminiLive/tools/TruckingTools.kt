@@ -1,8 +1,8 @@
-package trucker.GeminiLive.tools
+package trucker.geminilive.tools
 
-import trucker.GeminiLive.network.FunctionDeclaration
-import trucker.GeminiLive.network.Schema
-import trucker.GeminiLive.network.Tool
+import trucker.geminilive.network.FunctionDeclaration
+import trucker.geminilive.network.Schema
+import trucker.geminilive.network.Tool
 import kotlinx.serialization.json.*
 
 object TruckingTools {
@@ -143,8 +143,6 @@ object TruckingTools {
                     })
                     put("location", buildJsonObject {
                         put("as_of", "2026-04-15T14:20")
-                        put("lat", 35.1983)
-                        put("lon", -111.6513)
                         put("nearest_city", "Flagstaff, AZ")
                         put("corridor", "I-40 EB")
                     })
@@ -435,9 +433,8 @@ object TruckingTools {
             "getFuelNetworkRouting" -> {
                 buildJsonObject {
                     put("driver_id", DEMO_DRIVER_ID)
-                    put("current_fuel_level", "3/8 Tank")
                     put("recommended_stop", buildJsonObject {
-                        put("brand", "Swift Fuel Network #AZ-17 / Pilot")
+                        put("brand", "Pilot")
                         put("location", "Flagstaff, AZ (Exit 195)")
                         put("distance_miles", 12)
                         put("fuel_discount", "High")
@@ -587,3 +584,7 @@ object TruckingTools {
         }
     }
 }
+
+
+
+

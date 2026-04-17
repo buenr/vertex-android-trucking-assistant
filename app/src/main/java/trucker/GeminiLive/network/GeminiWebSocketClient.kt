@@ -1,12 +1,12 @@
-package trucker.GeminiLive.network
+package trucker.geminilive.network
 
 import android.util.Base64
 import android.util.Log
 import kotlinx.serialization.json.*
 import okhttp3.*
 import okio.ByteString
-import trucker.GeminiLive.audio.AudioConfig
-import trucker.GeminiLive.tools.TruckingTools
+import trucker.geminilive.audio.AudioConfig
+import trucker.geminilive.tools.TruckingTools
 import java.util.concurrent.TimeUnit
 
 class GeminiWebSocketClient(
@@ -281,10 +281,9 @@ class GeminiWebSocketClient(
 
     private fun handleToolCall(toolCall: ToolCall) {
         onStateChanged(GeminiState.WORKING)
-        // Simulate real-world latency with a 2-second delay; remove this in production
+        // Send tool results immediately to Gemini to start buffering audio
         sharedClient.dispatcher.executorService.execute {
             try {
-                Thread.sleep(2000)
                 val responseMessage = buildJsonObject {
                     putJsonObject("toolResponse") {
                         putJsonArray("functionResponses") {
@@ -301,7 +300,7 @@ class GeminiWebSocketClient(
                 }
                 webSocket?.send(responseMessage.toString())
             } catch (e: Exception) {
-                Log.e("GeminiWS", "Error sending delayed tool response", e)
+                Log.e("GeminiWS", "Error sending tool response", e)
             }
         }
     }
@@ -313,3 +312,7 @@ class GeminiWebSocketClient(
         webSocket = null
     }
 }
+
+
+
+

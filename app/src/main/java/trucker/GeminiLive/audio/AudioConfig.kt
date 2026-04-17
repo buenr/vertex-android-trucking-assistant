@@ -1,4 +1,4 @@
-package trucker.GeminiLive.audio
+package trucker.geminilive.audio
 
 import android.media.AudioFormat
 
@@ -28,3 +28,7 @@ object AudioConfig {
     const val TARGET_INPUT_CHUNK_BYTES =
         (INPUT_SAMPLE_RATE * TARGET_INPUT_CHANNEL_COUNT * BYTES_PER_SAMPLE * TARGET_INPUT_CHUNK_MS) / 1000
 }
+
+
+
+

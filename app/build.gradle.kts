@@ -17,11 +17,11 @@ if (secretsPropertiesFile.exists()) {
 val geminiApiKey: String = secretsProperties.getProperty("GEMINI_API_KEY", "")
 
 android {
-    namespace = "trucker.GeminiLive"
+    namespace = "trucker.geminilive"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "trucker.GeminiLive"
+        applicationId = "trucker.geminilive"
         minSdk = 34
         targetSdk = 37
         versionCode = 1

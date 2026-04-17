@@ -1,4 +1,4 @@
-package trucker.GeminiLive.network
+package trucker.geminilive.network
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -163,3 +163,7 @@ enum class GeminiState(val label: String) {
     WORKING("Checking Data..."), // Used during Tool Calls
     SPEAKING("Speaking...")
 }
+
+
+
+

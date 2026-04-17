@@ -1,4 +1,4 @@
-package trucker.GeminiLive.ui.theme
+package trucker.geminilive.ui.theme
 
 import android.app.Activity
 import android.os.Build
@@ -56,3 +56,6 @@ fun MyApplicationTheme(
         content = content
     )
 }
+
+
+

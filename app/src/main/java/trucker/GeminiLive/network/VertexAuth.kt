@@ -1,4 +1,4 @@
-package trucker.GeminiLive.network
+package trucker.geminilive.network
 
 import android.content.Context
 import com.google.auth.oauth2.ServiceAccountCredentials
@@ -23,3 +23,7 @@ object VertexAuth {
         return credentials.projectId ?: "vertex-ai-testing1"
     }
 }
+
+
+
+
