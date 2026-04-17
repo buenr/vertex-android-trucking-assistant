@@ -3,33 +3,69 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Shadow for depth -->
-    <path
-        android:fillColor="#22000000"
-        android:pathData="M25,75 L83,75 L83,45 L70,35 L25,35 Z" />
 
-    <!-- Truck Cabin Body -->
+    <!-- Trailer Body -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M22,72 L86,72 L86,45 L70,32 L22,32 Z" />
+        android:fillColor="#CFD8DC"
+        android:pathData="M10,32 H62 V68 H10 Z" />
+
+    <!-- Trailer Highlights (Top edge) -->
+    <path
+        android:fillColor="#ECEFF1"
+        android:pathData="M10,32 H62 V35 H10 Z" />
+
+    <!-- Chassis / Connector -->
+    <path
+        android:fillColor="#455A64"
+        android:pathData="M60,64 H75 V68 H60 Z" />
+
+    <!-- Tractor Cab (Sleeper style) -->
+    <path
+        android:fillColor="#00477F"
+        android:pathData="M68,40 H88 L98,55 V68 H68 Z" />
 
     <!-- Windshield -->
     <path
-        android:fillColor="#E3F2FD"
-        android:pathData="M68,36 L82,46 L82,55 L68,55 Z" />
+        android:fillColor="#81D4FA"
+        android:pathData="M86,44 H90 L95,55 H86 Z" />
 
-    <!-- AI/Gemini Sparkle (The "Copilot" part) -->
+    <!-- Chrome Bumper/Grille Area -->
+    <path
+        android:fillColor="#B0BEC5"
+        android:pathData="M95,62 H100 V68 H95 Z" />
+
+    <!-- Gemini Star on Trailer -->
     <path
         android:fillColor="#4285F4"
-        android:pathData="M50,40 L52,44 L56,45 L52,46 L50,50 L48,46 L44,45 L48,44 Z" />
+        android:pathData="M36,40 L38.5,47.5 L46,50 L38.5,52.5 L36,60 L33.5,52.5 L26,50 L33.5,47.5 Z" />
 
     <!-- Wheels -->
     <group>
+        <!-- Trailer Tandems -->
         <path
-            android:fillColor="#333333"
-            android:pathData="M30,72 A5,5 0 1,0 40,72 A5,5 0 1,0 30,72" />
+            android:fillColor="#263238"
+            android:pathData="M15,68 A5,5 0 1,0 25,68 A5,5 0 1,0 15,68" />
         <path
-            android:fillColor="#333333"
-            android:pathData="M70,72 A5,5 0 1,0 80,72 A5,5 0 1,0 70,72" />
+            android:fillColor="#263238"
+            android:pathData="M26,68 A5,5 0 1,0 36,68 A5,5 0 1,0 26,68" />
+
+        <!-- Tractor Drives -->
+        <path
+            android:fillColor="#263238"
+            android:pathData="M72,68 A5,5 0 1,0 82,68 A5,5 0 1,0 72,68" />
+
+        <!-- Tractor Steer -->
+        <path
+            android:fillColor="#263238"
+            android:pathData="M88,68 A5,5 0 1,0 98,68 A5,5 0 1,0 88,68" />
     </group>
+
+    <!-- Center Caps (Detail) -->
+    <group>
+        <path android:fillColor="#90A4AE" android:pathData="M19,68 A1,1 0 1,0 21,68 A1,1 0 1,0 19,68" />
+        <path android:fillColor="#90A4AE" android:pathData="M30,68 A1,1 0 1,0 32,68 A1,1 0 1,0 30,68" />
+        <path android:fillColor="#90A4AE" android:pathData="M76,68 A1,1 0 1,0 78,68 A1,1 0 1,0 76,68" />
+        <path android:fillColor="#90A4AE" android:pathData="M92,68 A1,1 0 1,0 94,68 A1,1 0 1,0 92,68" />
+    </group>
+
 </vector>

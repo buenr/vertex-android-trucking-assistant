@@ -3,6 +3,10 @@ package trucker.GeminiLive
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import trucker.GeminiLive.audio.AudioPlayer
 import trucker.GeminiLive.audio.AudioRecorder
 import trucker.GeminiLive.network.GeminiState
@@ -15,6 +19,7 @@ class GeminiViewModel : ViewModel() {
     private val audioRecorder = AudioRecorder()
     private val audioPlayer = AudioPlayer()
     private lateinit var geminiClient: GeminiWebSocketClient
+    private var interruptionJob: Job? = null
 
     private fun addLog(message: String) {
         val timestamped = "[${System.currentTimeMillis() % 100000}] $message"
@@ -59,14 +64,27 @@ class GeminiViewModel : ViewModel() {
                 startRecorder()
             },
             onAudioReceived = { audioData ->
+                if (interruptionJob != null) {
+                    interruptionJob?.cancel()
+                    interruptionJob = null
+                }
                 audioPlayer.play(audioData)
             },
             onInterrupted = {
-                audioPlayer.flush()
-                addLog("Model interrupted — resuming mic")
+                // Graceful interruption: wait 200ms to see if it's transient noise
+                interruptionJob?.cancel()
+                interruptionJob = viewModelScope.launch {
+                    delay(200)
+                    audioPlayer.flush()
+                    addLog("Interruption confirmed — flushing audio")
+                    interruptionJob = null
+                }
+                addLog("Model interrupted — waiting 200ms grace period")
                 startRecorder()
             },
             onTurnComplete = {
+                interruptionJob?.cancel()
+                interruptionJob = null
                 addLog("Turn complete — resuming mic")
                 startRecorder()
             },
@@ -109,6 +127,8 @@ class GeminiViewModel : ViewModel() {
     }
 
     private fun stop() {
+        interruptionJob?.cancel()
+        interruptionJob = null
         isRecording = false
         audioRecorder.stop()
         audioPlayer.stop()

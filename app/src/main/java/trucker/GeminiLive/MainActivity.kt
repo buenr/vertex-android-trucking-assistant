@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -29,6 +30,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -92,8 +94,18 @@ fun CopilotScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // Truck AI Logo
+        Image(
+            painter = painterResource(id = R.drawable.ic_launcher_foreground),
+            contentDescription = "Truck AI Logo",
+            modifier = Modifier
+                .size(180.dp)
+                .padding(bottom = 8.dp)
+        )
+
         // Header
         Text(
             text = "Swift Copilot",
@@ -112,51 +124,24 @@ fun CopilotScreen(
             if (!uiState.isConnected) {
                 Button(
                     onClick = onToggle,
-                    modifier = Modifier.size(200.dp),
+                    modifier = Modifier.size(160.dp),
                     shape = CircleShape,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20))
                 ) {
-                    Text("START", fontSize = 32.sp, fontWeight = FontWeight.Black)
+                    Text("START", fontSize = 28.sp, fontWeight = FontWeight.Black)
                 }
             } else {
                 StateIndicator(uiState.aiState, uiState.currentTool, onToggle)
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Large Transcription Display (Driver Safe)
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 80.dp),
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                if (uiState.userText.isNotEmpty()) {
-                    Text(
-                        text = uiState.userText,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else if (uiState.aiState == GeminiState.LISTENING) {
-                    Text(
-                        text = "Listening...",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = Color.Gray
-                    )
-                }
-            }
-        }
-
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Debug Log Console
+        // Debug Log Console (Re-added for troubleshooting)
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(0.6f),
+                .weight(0.5f),
             shape = MaterialTheme.shapes.small,
             color = Color.Black
         ) {
@@ -179,8 +164,8 @@ fun CopilotScreen(
                             text = uiState.log[index],
                             color = Color(0xFF00FF00), // Terminal green
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            lineHeight = 14.sp
+                            fontSize = 10.sp,
+                            lineHeight = 12.sp
                         )
                     }
                 )
@@ -195,12 +180,20 @@ fun CopilotScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = uiState.status,
                     style = MaterialTheme.typography.labelMedium,
                     color = if (uiState.lastError.isNotEmpty()) Color.Red else Color.Gray
                 )
+                if (uiState.userText.isNotEmpty()) {
+                    Text(
+                        text = uiState.userText,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
             if (uiState.isConnected) {
                 TextButton(onClick = onToggle) {

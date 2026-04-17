@@ -418,11 +418,11 @@ object TruckingTools {
                         put("amenities", buildJsonArray {
                             add("DEF at Pump")
                             add("Cat Scale")
-                            add("Showers")
+                            add("Showers/Clean Bathrooms")
                             add("Restaurant")
                         })
                     })
-                    put("restriction_warning", "Do NOT fuel at Love's or independent stops on this corridor; use only Pilot/Flying J or Swift yards.")
+                    put("restriction_warning", "Do NOT fuel at independent stops on this corridor; use only Pilot/Flying J/Love's or Swift yards.")
                 }
             }
 
