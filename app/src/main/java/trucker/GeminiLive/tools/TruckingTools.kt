@@ -56,7 +56,7 @@ object TruckingTools {
             ),
             FunctionDeclaration(
                 name = "getCompanyFAQs",
-                description = "Returns curated deterministic Swift Transportation SOP and FAQ bundles by category. Invocation condition: call when the driver asks company-policy/procedure questions not specific to a single load state.",
+                description = "Returns Swift Transportation FAQs bundles by category (Pet/Rider Policy, Macros, Running Late Procedure, Breakdown Protocol, Headset Recommendations, etc). Invocation condition: call when the driver asks company-policy/procedure questions not specific to a single load state.",
                 parameters = Schema(
                     type = "object",
                     properties = emptyMap()
