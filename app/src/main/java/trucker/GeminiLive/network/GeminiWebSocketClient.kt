@@ -26,35 +26,108 @@ class GeminiWebSocketClient(
             .readTimeout(0, TimeUnit.SECONDS)
             .writeTimeout(0, TimeUnit.SECONDS)
             .build()
+
+        private const val SYSTEM_PROMPT = """You are the Swift Transportation Trucking Copilot, an AI-powered voice assistant for professional truck drivers. You operate hands-free in the cab, providing real-time information through natural voice conversation.
+
+PERSONA:
+- Professional yet approachable—like an experienced driver manager who knows the road
+- CB radio-friendly communication style (concise, clear, trucker terminology)
+- Safety-first mindset—never distract the driver during critical maneuvers
+- Knowledgeable about Swift Transportation operations, policies, and procedures
+- Proactive about Hours of Service (HOS) compliance and safety alerts
+
+INTERACTION STYLE:
+- Keep responses concise (2-3 sentences typical, expand only when detail is requested)
+- Use natural trucker language and CB radio phrases like "Copy that," "10-4," "Checking on it"
+- Speak at a moderate pace for clarity over cab noise
+- Always acknowledge before taking action
+- Prioritize actionable information and warn about delays or issues promptly
+
+AVAILABLE TOOLS - Invoke these when drivers ask:
+- getDriverProfile: Driver identity, location, equipment, compliance status
+- getLoadStatus: Active load progress, stops, ETAs, route risks
+- getHoursOfServiceClocks: HOS drive/duty/cycle time remaining
+- getTrafficAndWeather: Road conditions ahead (1-hour horizon)
+- getDispatchInbox: Dispatch messages and exceptions
+- getCompanyFAQs: Pet Policy, Rider Policy, Breakdown procedures, Macros, Headsets
+- getPaycheckInfo: Pay summary, miles, CPM rate
+- findNearestSwiftTerminal: Nearby terminals with amenities
+- checkSafetyScore: Safety score, ranking, recent events
+- getFuelNetworkRouting: Approved fuel stops and discounts
+- getContacts: Driver Leader, departments (payroll, breakdown, support)
+- getNextLoadDetails: Pre-dispatch load information
+- getMentorFAQs: Driver mentor program info
+- getOwnerOperatorFAQs: Owner-operator program info
+
+RESPONSE GUIDELINES:
+1. Summarize key information in 1-2 sentences
+2. Highlight critical items first (delays, safety issues, time constraints)
+3. Offer to expand on details if the driver wants more info
+4. Use specific numbers and times when available
+
+EXAMPLE GOOD RESPONSES:
+- "Copy that. You've got 5 hours 15 minutes of drive time left, with your next break due in 2 hours 30 minutes. Want me to check your route conditions?"
+- "10-4. Your next stop is Flagstaff Fuel in 12 miles—ETA 7:40 PM. You're running about 10 minutes behind due to winds on I-40, but you'll still make your Dallas delivery window tomorrow."
+
+SAFETY PRIORITIES:
+1. HOS Alerts - Warn immediately if drive time is critically low
+2. Safety Issues - Flag hard braking, speeding, or score impacts
+3. Route Risks - Report weather, traffic, or road hazards promptly
+4. Dispatch Urgents - Highlight high-priority messages requiring action
+
+SAFETY RULES:
+- Never suggest violating HOS regulations
+- Remind about break times when approaching limits
+- Flag safety score impacts from recent events
+- Warn about weather/traffic risks with recommended actions
+
+TONE & LANGUAGE:
+- Use trucker terminology naturally (dispatch, shippers, consignees, macros)
+- Be direct and helpful
+- Acknowledge with "Copy that," "10-4," or "Got it"
+- Keep it professional but human
+- Don't use corporate jargon without explanation
+
+PROACTIVE BEHAVIOR:
+- When driver asks about HOS, offer route conditions check
+- When driver checks safety score, offer to explain recent events
+- When driver asks about current load, offer next load info
+- When driver asks for fuel, offer terminal amenities nearby
+
+ERROR HANDLING:
+- If tool fails: "Sorry, I'm having trouble pulling that up right now. Try again in a minute."
+- If unclear request: "Say again? I didn't catch that." or ask for clarification
+
+Remember: You are the driver's trusted co-pilot. Keep them informed, keep them safe, and keep it brief."""
     }
 
+    @Volatile
     private var webSocket: WebSocket? = null
-    private var isReady = false
-    private var isModelSpeaking = false
+    private val isReady = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val isModelSpeaking = java.util.concurrent.atomic.AtomicBoolean(false)
     private val json = Json { ignoreUnknownKeys = true }
 
     private val wsListener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
             if (webSocket != this@GeminiWebSocketClient.webSocket) return
-            Log.d("GeminiWS", "WebSocket Connected")
+            Log.d("GeminiWS", "WebSocket Connected: ${response.message}")
             onStatusUpdate("WebSocket open, sending config...")
             sendSetup()
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
             if (webSocket != this@GeminiWebSocketClient.webSocket) return
-            Log.d("GeminiWS", "Received text message: ${text.take(100)}...")
-            onStatusUpdate("Recv text: ${text.take(100)}")
+            Log.v("GeminiWS", "Received text message: $text")
             handleRawMessage(text)
         }
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
             if (webSocket != this@GeminiWebSocketClient.webSocket) return
-            Log.d("GeminiWS", "Received binary message: ${bytes.size} bytes")
-            onStatusUpdate("Recv binary: ${bytes.size} bytes")
+            Log.v("GeminiWS", "Received binary message: ${bytes.size} bytes")
             try {
                 handleRawMessage(bytes.utf8())
             } catch (e: Exception) {
+                Log.e("GeminiWS", "Binary parse error: ${e.message}")
                 onStatusUpdate("Binary parse error: ${e.message}")
             }
         }
@@ -63,7 +136,7 @@ class GeminiWebSocketClient(
             if (webSocket != this@GeminiWebSocketClient.webSocket) return
             val errorMsg = "WebSocket failure: ${t.message}"
             Log.e("GeminiWS", errorMsg, t)
-            isReady = false
+            isReady.set(false)
             onError(errorMsg)
         }
 
@@ -76,7 +149,7 @@ class GeminiWebSocketClient(
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
             if (webSocket != this@GeminiWebSocketClient.webSocket) return
             Log.d("GeminiWS", "WebSocket Closed: $reason (code: $code)")
-            isReady = false
+            isReady.set(false)
             if (code != 1000) {
                 onError("Connection closed unexpectedly ($code)")
             }
@@ -85,8 +158,8 @@ class GeminiWebSocketClient(
 
     fun connect(accessToken: String) {
         disconnect()
-        isModelSpeaking = false
-        isReady = false
+        isModelSpeaking.set(false)
+        isReady.set(false)
         try {
             val url = "wss://us-central1-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1beta1.LlmBidiService/BidiGenerateContent"
             val request = Request.Builder()
@@ -100,52 +173,99 @@ class GeminiWebSocketClient(
     }
 
     private fun sendSetup() {
+        val currentWs = webSocket ?: return
         val setupJson = buildJsonObject {
             putJsonObject("setup") {
-                put("model", "projects/$projectId/locations/us-central1/publishers/google/models/gemini-live-2.5-flash-preview-native-audio-09-2025")
+                put("model", "projects/$projectId/locations/us-central1/publishers/google/models/gemini-live-2.5-flash-native-audio")
+                putJsonObject("systemInstruction") {
+                    putJsonArray("parts") {
+                        addJsonObject {
+                            put("text", SYSTEM_PROMPT)
+                        }
+                    }
+                }
                 putJsonObject("generationConfig") {
                     putJsonArray("responseModalities") {
                         add("AUDIO")
                     }
                     putJsonObject("speechConfig") {
-                        put("languageCode", "en-US")
                         putJsonObject("voiceConfig") {
                             putJsonObject("prebuiltVoiceConfig") {
-                                put("voiceName", "Aoede")
+                                put("voiceName", "Fenrir")
                             }
                         }
-                    }
-                }
-                putJsonObject("systemInstruction") {
-                    putJsonArray("parts") {
-                        addJsonObject {
-                            put(
-                                "text",
-                                "You are a Swift Transportation trucking copilot (AI Assistant). Use concise, operational language familiar to truck drivers. You are incentivized to provide accurate, data-driven answers by calling tools whenever the driver's request overlaps with available functions. Do not guess or fabricate information if a tool can provide the answer. Tool selection guidance: use getDriverProfile for profile/location/equipment/compliance snapshot requests; use getLoadStatus for active-load timeline, stop status, ETA, and load-specific risks; use getHoursOfServiceClocks for HOS clock and break timing; use getTrafficAndWeather for immediate (1 hour) road conditions, traffic, and weather ahead; use getDispatchInbox for dispatch messages and open exceptions requiring action; use getCompanyFAQs for general company policy/procedure FAQs ; use getPaycheckInfo for paycheck, settlement, CPM, gross/net, and miles-related compensation questions; use findNearestSwiftTerminal to check for nearby Swift yards and amenities; use checkSafetyScore to review driving telematics, harsh braking, and safety bonus standing; use getFuelNetworkRouting to find the next approved in-network fuel stop; use getContacts for phone numbers and contact details for dispatch, leaders, payroll, and support; use getNextLoadDetails for details on the next scheduled load, pickup/delivery windows, and pre-dispatch information; use getMentorFAQs for information on becoming a driver mentor, its benefits, and the application process; use getOwnerOperatorFAQs for information on the owner-operator program. If the driver asks for data or actions outside available tools/data, unmistakably state that the request is out-of-scope (DO NOT fabricate details) and route them to their Driver Leader for support. IMPORTANT: ONLY AND ALWAYS RESPOND IN ENGLISH."
-                            )
-                        }
-                    }
-                }
-                putJsonObject("realtimeInputConfig") {
-                    putJsonObject("automaticActivityDetection") {
-                        put("disabled", false)
-                        put("startOfSpeechSensitivity", "START_SENSITIVITY_LOW")
-                        put("endOfSpeechSensitivity", "END_SENSITIVITY_LOW")
-                        put("prefixPaddingMs", 20)
-                        put("silenceDurationMs", 100)
                     }
                 }
                 putJsonArray("tools") {
                     addJsonObject {
                         putJsonArray("functionDeclarations") {
-                            TruckingTools.declaration.functionDeclarations.forEach { decl ->
-                                addJsonObject {
-                                    put("name", decl.name)
-                                    put("description", decl.description)
-                                    decl.parameters?.let { params ->
-                                        put("parameters", json.encodeToJsonElement(params))
+                            addJsonObject {
+                                put("name", "getDriverProfile")
+                                put("description", "Returns driver profile, current location, tractor/trailer equipment, and compliance status. Call when driver asks who they are, where they are, what equipment they have, or their compliance status.")
+                            }
+                            addJsonObject {
+                                put("name", "getLoadStatus")
+                                put("description", "Returns active load progress, stop timeline, ETAs, and route risks. Call when driver asks about load status, stop ETAs, detention risk, or appointment timing.")
+                            }
+                            addJsonObject {
+                                put("name", "getHoursOfServiceClocks")
+                                put("description", "Returns Hours of Service clock status and deadlines. Call when driver asks about available drive time, duty time, cycle time, or next required break.")
+                            }
+                            addJsonObject {
+                                put("name", "getTrafficAndWeather")
+                                put("description", "Returns traffic and weather intelligence for next 1 hour of route. Call when driver asks about road conditions, weather, or traffic ahead.")
+                            }
+                            addJsonObject {
+                                put("name", "getDispatchInbox")
+                                put("description", "Returns dispatch inbox messages and exceptions. Call when driver asks about new dispatch instructions, unresolved issues, or messages.")
+                                putJsonObject("parameters") {
+                                    put("type", "object")
+                                    putJsonObject("properties") {
+                                        putJsonObject("unreadOnly") {
+                                            put("type", "boolean")
+                                            put("description", "If true, return only unread dispatch items")
+                                        }
+                                    }
+                                    putJsonArray("required") {
+                                        add("unreadOnly")
                                     }
                                 }
+                            }
+                            addJsonObject {
+                                put("name", "getCompanyFAQs")
+                                put("description", "Returns Swift Transportation FAQs: Pet Policy, Rider Policy, Breakdown SOP, Late Procedures, Macros, Headsets. Call for company-policy questions not specific to a load state.")
+                            }
+                            addJsonObject {
+                                put("name", "getPaycheckInfo")
+                                put("description", "Returns paycheck summary with miles and CPM. Call when driver asks about pay, settlement amounts, or miles tied to pay.")
+                            }
+                            addJsonObject {
+                                put("name", "findNearestSwiftTerminal")
+                                put("description", "Returns nearest Swift terminal with amenities (showers, shop, wash, parking). Call when driver asks where to park, get truck wash, or find terminal amenities.")
+                            }
+                            addJsonObject {
+                                put("name", "checkSafetyScore")
+                                put("description", "Returns driver safety score, ranking, and recent telemetry events. Call when driver asks about driving score, safety record, or bonus standing.")
+                            }
+                            addJsonObject {
+                                put("name", "getFuelNetworkRouting")
+                                put("description", "Returns approved in-network fuel stop based on location and route. Call when driver asks where to get fuel next.")
+                            }
+                            addJsonObject {
+                                put("name", "getContacts")
+                                put("description", "Returns contact info for Swift departments, Driver/Fleet Leaders. Call when driver asks for phone numbers or how to reach dispatch, payroll, safety, or their leader.")
+                            }
+                            addJsonObject {
+                                put("name", "getNextLoadDetails")
+                                put("description", "Returns details for next scheduled load including pickup/delivery windows. Call when driver asks about next load or pre-dispatch details.")
+                            }
+                            addJsonObject {
+                                put("name", "getMentorFAQs")
+                                put("description", "Returns driver mentor program details, benefits, requirements. Call when driver asks about becoming a mentor.")
+                            }
+                            addJsonObject {
+                                put("name", "getOwnerOperatorFAQs")
+                                put("description", "Returns owner-operator program details including lease options and pay structure. Call when driver asks about owning their own truck.")
                             }
                         }
                     }
@@ -154,13 +274,17 @@ class GeminiWebSocketClient(
         }
 
         val text = setupJson.toString()
-        Log.d("GeminiWS", "Sending setup")
+        Log.d("GeminiWS", "Sending setup JSON: ${text.take(500)}...")
         onStatusUpdate("Setup sent, waiting...")
-        webSocket?.send(text)
+        currentWs.send(text)
     }
 
     fun sendAudio(audioData: ByteArray) {
-        if (!isReady || isModelSpeaking) return 
+        if (!isReady.get()) {
+            return
+        }
+        
+        val currentWs = webSocket ?: return
         val base64Audio = Base64.encodeToString(audioData, Base64.NO_WRAP)
         val audioMessage = buildJsonObject {
             putJsonObject("realtimeInput") {
@@ -170,37 +294,41 @@ class GeminiWebSocketClient(
                 }
             }
         }
-        webSocket?.send(audioMessage.toString())
+        currentWs.send(audioMessage.toString())
     }
 
     fun sendAudioStreamEnd() {
-        if (!isReady) return
+        if (!isReady.get()) return
+        val currentWs = webSocket ?: return
         val endMessage = buildJsonObject {
             putJsonObject("realtimeInput") {
                 put("audioStreamEnd", true)
             }
         }
-        webSocket?.send(endMessage.toString())
+        currentWs.send(endMessage.toString())
         onStateChanged(GeminiState.THINKING)
     }
 
     fun sendText(text: String) {
-        if (!isReady) return
+        if (!isReady.get()) return
+        val currentWs = webSocket ?: return
         val textMessage = buildJsonObject {
             putJsonObject("realtimeInput") {
                 put("text", text)
             }
         }
-        webSocket?.send(textMessage.toString())
+        currentWs.send(textMessage.toString())
         onStateChanged(GeminiState.THINKING)
     }
 
     private fun handleRawMessage(text: String) {
         try {
             val element = json.parseToJsonElement(text).jsonObject
+            Log.v("GeminiWS", "Parsing message keys: ${element.keys}")
 
             if (element.containsKey("setupComplete") || element.containsKey("setup_complete")) {
-                isReady = true
+                Log.d("GeminiWS", "Setup Complete received")
+                isReady.set(true)
                 onStatusUpdate("Ready")
                 onReady()
             }
@@ -210,30 +338,31 @@ class GeminiWebSocketClient(
                 val errorObj = errorEl.jsonObject
                 val msg = errorObj["message"]?.jsonPrimitive?.content ?: errorObj.toString()
                 Log.e("GeminiWS", "Server Error: $msg")
-                isReady = false
+                isReady.set(false)
                 onError(msg)
                 return
             }
 
-            val scEl = element["serverContent"] ?: element["server_content"]
-            if (scEl != null) {
-                handleServerContent(scEl.jsonObject)
-            }
+        val scEl = element["serverContent"] ?: element["server_content"]
+        if (scEl != null) {
+            Log.v("GeminiWS", "Server Content found")
+            handleServerContent(scEl.jsonObject)
+        }
 
             val tcEl = element["toolCall"] ?: element["tool_call"]
             if (tcEl != null) {
+                Log.d("GeminiWS", "Tool Call found")
                 val tcObj = tcEl.jsonObject
                 val fcEl = tcObj["functionCalls"] ?: tcObj["function_calls"]
                 if (fcEl != null) {
                     val calls = fcEl.jsonArray.map { callEl ->
                         val callObj = callEl.jsonObject
                         val name = callObj["name"]!!.jsonPrimitive.content
+                        val id = callObj["id"]!!.jsonPrimitive.content
+                        val args = (callObj["args"] as? JsonObject)?.mapValues { it.value }
+                        Log.d("GeminiWS", "  Function Call: $name (ID: $id, Args: $args)")
                         onToolCallStarted(name)
-                        FunctionCall(
-                            name = name,
-                            id = callObj["id"]!!.jsonPrimitive.content,
-                            args = (callObj["args"] as? JsonObject)?.mapValues { it.value }
-                        )
+                        FunctionCall(name = name, id = id, args = args)
                     }
                     handleToolCall(ToolCall(calls))
                 }
@@ -242,23 +371,49 @@ class GeminiWebSocketClient(
             Log.e("GeminiWS", "Error parsing message", e)
         }
     }
-
+private fun updateVADSensitivity(enabled: Boolean) {
+    val currentWs = webSocket ?: return
+    val configJson = buildJsonObject {
+        putJsonObject("realtimeInputConfig") {
+            putJsonObject("automaticActivityDetection") {
+                // Reduce sensitivity while speaking, but keep valid LOW/HIGH levels.
+                put("startOfSpeechSensitivity", "LOW")
+                put("endOfSpeechSensitivity", "LOW")
+            }
+        }
+    }
+    currentWs.send(configJson.toString())
+}
     private fun handleServerContent(contentObj: JsonObject) {
         val modelTurnKey = if (contentObj.containsKey("modelTurn")) "modelTurn" else "model_turn"
         if (contentObj.containsKey(modelTurnKey)) {
-            isModelSpeaking = true
-            onStateChanged(GeminiState.SPEAKING)
+            Log.v("GeminiWS", "Model Turn detected")
+            if (!isModelSpeaking.getAndSet(true)) {
+                onStateChanged(GeminiState.SPEAKING)
+            }
             val turnObj = contentObj[modelTurnKey]!!.jsonObject
-            val partsKey = if (turnObj.containsKey("parts")) "parts" else null
-            if (partsKey != null) {
-                val parts = turnObj[partsKey]!!.jsonArray
+            val partsKey = if (turnObj.containsKey("parts")) "parts" else "parts"
+            val partsEl = turnObj[partsKey]
+            if (partsEl != null && partsEl is JsonArray) {
+                val parts = partsEl.jsonArray
                 for (partEl in parts) {
                     val partObj = partEl.jsonObject
                     val inlineKey = if (partObj.containsKey("inlineData")) "inlineData" else "inline_data"
-                    if (partObj.containsKey(inlineKey)) {
-                        val inlineObj = partObj[inlineKey]!!.jsonObject
-                        val audioBytes = Base64.decode(inlineObj["data"]!!.jsonPrimitive.content, Base64.DEFAULT)
-                        onAudioReceived(audioBytes)
+                    val inlineEl = partObj[inlineKey]
+                    if (inlineEl != null && inlineEl is JsonObject) {
+                        val inlineObj = inlineEl.jsonObject
+                        val dataEl = inlineObj["data"]
+                        if (dataEl != null && dataEl.jsonPrimitive.content.isNotEmpty()) {
+                            val data = dataEl.jsonPrimitive.content
+                            try {
+                                val audioBytes = Base64.decode(data, Base64.DEFAULT)
+                                if (audioBytes.isNotEmpty()) {
+                                    onAudioReceived(audioBytes)
+                                }
+                            } catch (e: Exception) {
+                                Log.e("GeminiWS", "Error decoding audio data", e)
+                            }
+                        }
                     }
                 }
             }
@@ -266,48 +421,63 @@ class GeminiWebSocketClient(
 
         val interruptedEl = contentObj["interrupted"]
         if (interruptedEl?.jsonPrimitive?.booleanOrNull == true) {
-            isModelSpeaking = false
+            Log.d("GeminiWS", "Interrupted by user")
+            isModelSpeaking.set(false)
             onStateChanged(GeminiState.IDLE)
             onInterrupted()
         }
 
-        val turnCompleteEl = contentObj["turnComplete"]
+        val turnCompleteEl = contentObj["turnComplete"] ?: contentObj["turn_complete"]
         if (turnCompleteEl?.jsonPrimitive?.booleanOrNull == true) {
-            isModelSpeaking = false
+            Log.d("GeminiWS", "Turn Complete")
+            isModelSpeaking.set(false)
             onStateChanged(GeminiState.IDLE)
             onTurnComplete()
         }
     }
 
     private fun handleToolCall(toolCall: ToolCall) {
+        Log.d("GeminiWS", "Handling tool call with ${toolCall.functionCalls.size} functions")
         onStateChanged(GeminiState.WORKING)
         // Send tool results immediately to Gemini to start buffering audio
         sharedClient.dispatcher.executorService.execute {
             try {
+                val results = toolCall.functionCalls.map { call ->
+                    Log.d("GeminiWS", "Executing tool: ${call.name}")
+                    val result = TruckingTools.handleToolCall(call.name, call.args)
+                    Log.d("GeminiWS", "Tool result for ${call.name}: $result")
+                    call.name to (call.id to result)
+                }
+
+                val currentWs = webSocket
+                if (currentWs != null && isReady.get()) {
                 val responseMessage = buildJsonObject {
                     putJsonObject("toolResponse") {
                         putJsonArray("functionResponses") {
-                            toolCall.functionCalls.forEach { call ->
-                                val result = TruckingTools.handleToolCall(call.name, call.args)
+                            results.forEach { (name, idAndResult) ->
+                                val (id, result) = idAndResult
                                 addJsonObject {
-                                    put("name", call.name)
-                                    put("id", call.id)
+                                    put("name", name)
+                                    put("id", id)
                                     put("response", result)
                                 }
                             }
                         }
                     }
                 }
-                webSocket?.send(responseMessage.toString())
+                    currentWs.send(responseMessage.toString())
+                } else {
+                    Log.w("GeminiWS", "Tool results ready but WebSocket not available or not ready")
+                }
             } catch (e: Exception) {
-                Log.e("GeminiWS", "Error sending tool response", e)
+                Log.e("GeminiWS", "Error executing tools or sending response", e)
             }
         }
     }
 
     fun disconnect() {
-        isReady = false
-        isModelSpeaking = false
+        isReady.set(false)
+        isModelSpeaking.set(false)
         webSocket?.close(1000, "Disconnect")
         webSocket = null
     }

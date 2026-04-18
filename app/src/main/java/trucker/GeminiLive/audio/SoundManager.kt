@@ -2,70 +2,108 @@ package trucker.geminilive.audio
 
 import android.media.AudioManager
 import android.media.ToneGenerator
+import android.util.Log
 import kotlinx.coroutines.*
 import kotlin.random.Random
 
 class SoundManager {
-    private val toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 60)
+    private val lock = Any()
+    private var toneGenerator: ToneGenerator? = ToneGenerator(AudioManager.STREAM_MUSIC, 60)
     private var loopingJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    /**
-     * "Thinking" effect: A very subtle, slow rhythmic pulse.
-     * Provides immediate feedback as soon as the user stops talking.
-     */
-    fun startThinkingLoop() {
-        stopLoop()
-        loopingJob = scope.launch {
-            while (isActive) {
-                // Extremely soft pulse
-                toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 50)
-                delay(2000)
+    fun playStartupBeep() {
+        Log.d("SoundManager", "playStartupBeep()")
+        scope.launch {
+            try {
+                synchronized(lock) {
+                    toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 100)
+                }
+                delay(150)
+                synchronized(lock) {
+                    toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP2, 150)
+                }
+            } catch (e: Exception) {
+                Log.e("SoundManager", "Error in playStartupBeep", e)
             }
         }
     }
 
-    /**
-     * "Digital Typing/Processing" effect: Randomized tones and timing.
-     * Simulates a high-speed mechanical typing or data processing sequence.
-     */
-    fun startWorkingLoop() {
+    fun startThinkingLoop() {
+        Log.d("SoundManager", "startThinkingLoop()")
         stopLoop()
-        loopingJob = scope.launch {
-            val tones = intArrayOf(
-                ToneGenerator.TONE_CDMA_PIP,
-                ToneGenerator.TONE_PROP_BEEP2,
-                ToneGenerator.TONE_CDMA_SOFT_ERROR_LITE
-            )
-            while (isActive) {
-                // Pick a random tone from the set to vary the "key" sound
-                val tone = tones[Random.nextInt(tones.size)]
-                
-                // Varied duration for slight mechanical imperfection
-                val duration = Random.nextInt(30, 60)
-                toneGenerator.startTone(tone, duration)
-                
-                // Irregular delays between "keystrokes"
-                val nextDelay = Random.nextLong(40, 180)
-                delay(nextDelay)
-                
-                // Occasionally add a longer pause between "words/chunks"
-                if (Random.nextInt(10) == 0) {
-                    delay(Random.nextLong(150, 300))
+        synchronized(lock) {
+            loopingJob = scope.launch {
+                try {
+                    while (isActive) {
+                        synchronized(lock) {
+                            toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 50)
+                        }
+                        delay(2000)
+                    }
+                } catch (e: Exception) {
+                    if (e !is CancellationException) {
+                        Log.e("SoundManager", "Error in thinking loop", e)
+                    }
+                } finally {
+                    Log.d("SoundManager", "Thinking loop stopped")
+                }
+            }
+        }
+    }
+
+    fun startWorkingLoop() {
+        Log.d("SoundManager", "startWorkingLoop()")
+        stopLoop()
+        synchronized(lock) {
+            loopingJob = scope.launch {
+                val tones = intArrayOf(
+                    ToneGenerator.TONE_CDMA_PIP,
+                    ToneGenerator.TONE_PROP_BEEP2,
+                    ToneGenerator.TONE_CDMA_SOFT_ERROR_LITE
+                )
+                try {
+                    while (isActive) {
+                        val tone = tones[Random.nextInt(tones.size)]
+                        val duration = Random.nextInt(30, 60)
+                        synchronized(lock) {
+                            toneGenerator?.startTone(tone, duration)
+                        }
+                        val nextDelay = Random.nextLong(40, 180)
+                        delay(nextDelay)
+                        if (Random.nextInt(10) == 0) {
+                            delay(Random.nextLong(150, 300))
+                        }
+                    }
+                } catch (e: Exception) {
+                    if (e !is CancellationException) {
+                        Log.e("SoundManager", "Error in working loop", e)
+                    }
+                } finally {
+                    Log.d("SoundManager", "Working loop stopped")
                 }
             }
         }
     }
 
     fun stopLoop() {
-        loopingJob?.cancel()
-        loopingJob = null
+        synchronized(lock) {
+            if (loopingJob != null) {
+                Log.v("SoundManager", "stopLoop()")
+                loopingJob?.cancel()
+                loopingJob = null
+            }
+        }
     }
 
     fun release() {
+        Log.d("SoundManager", "release()")
         stopLoop()
         scope.cancel()
-        toneGenerator.release()
+        synchronized(lock) {
+            toneGenerator?.release()
+            toneGenerator = null
+        }
     }
 }
 

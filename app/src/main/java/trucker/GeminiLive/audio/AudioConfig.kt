@@ -16,7 +16,7 @@ object AudioConfig {
     const val TARGET_INPUT_CHANNEL_COUNT = 1
     
     // CHANGE: Some tablets behave better with STEREO config even if the data is Mono
-    const val CHANNEL_CONFIG_OUT = AudioFormat.CHANNEL_OUT_MONO
+    const val CHANNEL_CONFIG_OUT = AudioFormat.CHANNEL_OUT_STEREO
     
     const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
     const val BYTES_PER_SAMPLE = 2 

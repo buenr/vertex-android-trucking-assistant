@@ -92,7 +92,7 @@ client = genai.Client(vertexai=True, project="your-project-id", location="global
 - Use `gemini-3.1-pro-preview` for complex reasoning, coding, research (1M tokens)
 - Use `gemini-3-flash-preview` for fast, balanced performance, multimodal (1M tokens)
 - Use `gemini-3-pro-image-preview` for Nano Banana Pro image generation and editing
-- Use `gemini-live-2.5-flash-native-audio` for Live Realtime API including native audio
+- Use `gemini-live-2.5-flash-native-audio` for Live Realtime API including native audio (GA stable)
 
 Use the following models if explicitly requested:
 
@@ -112,7 +112,7 @@ Use the following models if explicitly requested:
 from google import genai
 client = genai.Client()
 response = client.models.generate_content(
-    model="gemini-3-flash-preview",
+    model="gemini-live-2.5-flash-native-audio",
     contents="Explain quantum computing"
 )
 print(response.text)
@@ -123,7 +123,7 @@ print(response.text)
 import { GoogleGenAI } from "@google/genai";
 const ai = new GoogleGenAI({ vertexai: { project: "your-project-id", location: "global" } });
 const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-live-2.5-flash-native-audio",
     contents: "Explain quantum computing"
 });
 console.log(response.text);
@@ -151,7 +151,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	resp, err := client.Models.GenerateContent(ctx, "gemini-3-flash-preview", genai.Text("Explain quantum computing"), nil)
+	resp, err := client.Models.GenerateContent(ctx, "gemini-live-2.5-flash-native-audio", genai.Text("Explain quantum computing"), nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -170,7 +170,7 @@ public class GenerateTextFromTextInput {
     Client client = Client.builder().vertexAi(true).project("your-project-id").location("global").build();
     GenerateContentResponse response =
         client.models.generateContent(
-            "gemini-3-flash-preview",
+             "gemini-live-2.5-flash-native-audio",
             "Explain quantum computing",
             null);
 
@@ -190,7 +190,7 @@ var client = new Client(
 );
 
 var response = await client.Models.GenerateContent(
-    "gemini-3-flash-preview",
+    "gemini-live-2.5-flash-native-audio",
     "Explain quantum computing"
 );
 

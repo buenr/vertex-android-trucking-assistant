@@ -26,11 +26,11 @@ Key capabilities:
 
 ## Models
 
-- `gemini-3.1-flash-live-preview` — Optimized for low-latency, real-time dialogue. Native audio output, thinking (via `thinkingLevel`). 128k context window. **This is the recommended model for all Live API use cases.**
+- `gemini-live-2.5-flash-native-audio` — **GA stable version**. Optimized for low-latency, real-time dialogue. Native audio output, thinking (via `thinkingLevel`). 128k context window. **This is the recommended model for all Live API use cases.**
 
 > [!WARNING]
-> The following Live API models are **deprecated** and will be shut down. Migrate to `gemini-3.1-flash-live-preview`.
-> - `gemini-2.5-flash-native-audio-preview-12-2025` — Migrate to `gemini-3.1-flash-live-preview`.
+> The following Live API models are **deprecated** and will be shut down. Migrate to `gemini-live-2.5-flash-native-audio`.
+> - `gemini-3.1-flash-live-preview` — Migrate to `gemini-live-2.5-flash-native-audio`.
 > - `gemini-live-2.5-flash-preview` — Released June 17, 2025. Shutdown: December 9, 2025.
 > - `gemini-2.0-flash-live-001` — Released April 9, 2025. Shutdown: December 9, 2025.
 
@@ -99,14 +99,14 @@ config = types.LiveConnectConfig(
     )
 )
 
-async with client.aio.live.connect(model="gemini-3.1-flash-live-preview", config=config) as session:
+async with client.aio.live.connect(model="gemini-live-2.5-flash-native-audio", config=config) as session:
     pass  # Session is active
 ```
 
 #### JavaScript
 ```js
 const session = await ai.live.connect({
-  model: 'gemini-3.1-flash-live-preview',
+  model: 'gemini-live-2.5-flash-native-audio',
   config: {
     responseModalities: ['audio'],
     systemInstruction: { parts: [{ text: 'You are a helpful assistant.' }] }
@@ -223,9 +223,9 @@ if (content?.interrupted) { /* Stop playback, clear audio queue */ }
 
 ## Migrating from Gemini 2.5 Flash Live
 
-When migrating from `gemini-2.5-flash-native-audio-preview-12-2025` to `gemini-3.1-flash-live-preview`:
+When migrating to `gemini-live-2.5-flash-native-audio`:
 
-1. **Model string** — Update from `gemini-2.5-flash-native-audio-preview-12-2025` to `gemini-3.1-flash-live-preview`.
+1. **Model string** — Update to `gemini-live-2.5-flash-native-audio`.
 2. **Thinking configuration** — Use `thinkingLevel` (`minimal`, `low`, `medium`, `high`) instead of `thinkingBudget`. Default is `minimal` for lowest latency.
 3. **Server events** — A single event can contain multiple content parts simultaneously (audio + transcript). Process **all** parts in each event.
 4. **Client content** — `send_client_content` is only for seeding initial context history (set `initial_history_in_client_content` in `history_config`). Use `send_realtime_input` for text during conversation.

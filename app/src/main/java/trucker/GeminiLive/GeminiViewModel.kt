@@ -1,11 +1,13 @@
 package trucker.geminilive
 
 import android.app.Application
+import android.util.Log
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import trucker.geminilive.audio.AudioPlayer
@@ -27,9 +29,25 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
     private var toolTimerJob: Job? = null
     private var pendingState: GeminiState? = null
     private var isRecording = false
+    private var isTurnCompletePending = false
 
     init {
         val projectId = VertexAuth.getProjectId(application)
+        audioPlayer.onPlaybackComplete = {
+            Log.d("GeminiVM", "Playback complete, entering silence window (600ms)")
+            viewModelScope.launch {
+                delay(600)
+                Log.d("GeminiVM", "Silence window passed, re-enabling microphone. Pending turn complete: $isTurnCompletePending")
+                if (isTurnCompletePending) {
+                    isTurnCompletePending = false
+                    audioRecorder.unmute()
+                    startRecorder()
+                } else {
+                    Log.d("GeminiVM", "Turn status no longer pending, skipping recorder restart")
+                    audioRecorder.unmute()
+                }
+            }
+        }
         geminiClient = GeminiWebSocketClient(
             projectId = projectId,
             onStatusUpdate = { status ->
@@ -37,61 +55,112 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
                 addLog(status)
             },
             onStateChanged = { state ->
-                // If the 3-second processing timer is running, just queue the state change
-                if (toolTimerJob != null) {
-                    pendingState = state
-                } else {
-                    // Handle state transitions with synchronization for WORKING state
-                    when (state) {
-                        GeminiState.WORKING -> {
+                viewModelScope.launch {
+                    try {
+                        Log.d("GeminiVM", "State changed to: $state")
+                        addLog("State -> $state")
+                        
+                        // If we transition to a state other than WORKING, we should immediately 
+                        // stop the tool loop/timer so that UI and audio are in sync.
+                        if (state != GeminiState.WORKING && toolTimerJob != null) {
+                            Log.d("GeminiVM", "  $state state reached during WORKING loop - cancelling timer")
+                            toolTimerJob?.cancel()
+                            toolTimerJob = null
+                            soundManager.stopLoop()
+                            audioPlayer.stopBufferingAndPlay()
                             pendingState = state
                             updateUi { it.copy(aiState = state) }
-                            // Start 3-second synchronized delay
-                            audioPlayer.startBuffering()
-                            soundManager.startWorkingLoop()
+                        } else if (toolTimerJob != null && state != GeminiState.WORKING) {
+                            Log.v("GeminiVM", "  State change pending (waiting for timer)")
+                            pendingState = state
+                        } else {
+                            // Handle state transitions with synchronization for WORKING state
+                            when (state) {
+                                GeminiState.WORKING -> {
+                                    pendingState = state
+                                    updateUi { it.copy(aiState = state) }
+                                    
+                                    // Only initiate buffering/loop and timer if this is the FIRST tool in a sequence
+                                    if (toolTimerJob == null) {
+                                        Log.d("GeminiVM", "  Starting tool timer loop")
+                                        audioPlayer.startBuffering()
+                                        soundManager.startWorkingLoop()
 
-                            toolTimerJob?.cancel()
-                            toolTimerJob = viewModelScope.launch {
-                                delay(3000)
-                                // 3 seconds are up: release buffer and stop chime
-                                soundManager.stopLoop()
-                                audioPlayer.stopBufferingAndPlay()
-                                toolTimerJob = null
+                                        toolTimerJob = launch {
+                                            try {
+                                                // Randomized minimum perception delay (2-6s)
+                                                val minDelay = (2000..6000).random().toLong()
+                                                Log.v("GeminiVM", "    Timer set for ${minDelay}ms")
+                                                delay(minDelay)
+                                                
+                                                // NO CHEATING: If the server is still actually working after the 
+                                                // minimum delay, we stay in the working loop until it finishes.
+                                                while (pendingState == GeminiState.WORKING) {
+                                                    delay(100)
+                                                }
 
-                                // Apply the most recent state that arrived while we were waiting
-                                pendingState?.let { lastState ->
-                                    updateUi { it.copy(aiState = lastState) }
+                                                Log.d("GeminiVM", "    Timer & Work finished, stopping loop")
+                                                // Both min delay passed AND actual work is finished
+                                                soundManager.stopLoop()
+                                                audioPlayer.stopBufferingAndPlay()
+                                                toolTimerJob = null
+
+                                                // Apply the final state reached after all tools/delays finished
+                                                pendingState?.let { lastState ->
+                                                    Log.d("GeminiVM", "    Applying final state: $lastState")
+                                                    updateUi { it.copy(aiState = lastState) }
+                                                }
+                                            } catch (e: Exception) {
+                                                if (e !is CancellationException) {
+                                                    Log.e("GeminiVM", "Error in toolTimerJob", e)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                GeminiState.THINKING -> {
+                                    Log.d("GeminiVM", "  Starting thinking loop")
+                                    pendingState = state
+                                    updateUi { it.copy(aiState = state) }
+                                    soundManager.startThinkingLoop()
+                                }
+                                else -> {
+                                    Log.d("GeminiVM", "  Clearing loops and applying state")
+                                    pendingState = state
+                                    updateUi {
+                                        it.copy(
+                                            aiState = state,
+                                            currentTool = if (state != GeminiState.WORKING) "" else it.currentTool
+                                        )
+                                    }
+                                    soundManager.stopLoop()
                                 }
                             }
                         }
-                        GeminiState.THINKING -> {
-                            pendingState = state
-                            updateUi { it.copy(aiState = state) }
-                            soundManager.startThinkingLoop()
-                        }
-                        else -> {
-
-                            pendingState = state
-                            updateUi {
-                                it.copy(
-                                    aiState = state,
-                                    currentTool = if (state != GeminiState.WORKING) "" else it.currentTool
-                                )
-                            }
-                            soundManager.stopLoop()
-                        }
+                    } catch (e: Exception) {
+                        Log.e("GeminiVM", "Critical error in onStateChanged", e)
+                        addLog("CRITICAL ERROR: ${e.message}")
                     }
                 }
             },
             onReady = {
                 updateUi { it.copy(status = "Connected & Listening") }
                 addLog("Ready — starting mic")
+                soundManager.playStartupBeep()
                 startRecorder()
             },
             onAudioReceived = { audioData ->
+                // Reset turn complete flag if new audio arrives - we're still in the turn
+                if (isTurnCompletePending) {
+                    Log.d("GeminiVM", "New audio arrived after turn complete, resetting pending flag")
+                    isTurnCompletePending = false
+                }
+                // Mute microphone when model starts speaking to prevent self-interruption
+                audioRecorder.mute()
                 audioPlayer.play(audioData)
-                if (interruptionJob != null) {
-                    viewModelScope.launch {
+                viewModelScope.launch {
+                    if (interruptionJob != null) {
+                        Log.d("GeminiVM", "Cancelling pending interruption job as audio arrived")
                         interruptionJob?.cancel()
                         interruptionJob = null
                     }
@@ -100,22 +169,24 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
             onInterrupted = {
                 viewModelScope.launch {
                     interruptionJob?.cancel()
-                    interruptionJob = launch {
-                        delay(200)
-                        audioPlayer.flush()
-                        addLog("Interruption confirmed")
-                        interruptionJob = null
+                    interruptionJob = null
+                    isTurnCompletePending = false
+                    audioPlayer.flush()
+                    audioRecorder.unmute()
+                    addLog("Interruption confirmed")
+                    // Only restart recorder if it's not already running
+                    if (!isRecording) {
+                        startRecorder()
                     }
-                    addLog("Interrupted — waiting grace period")
-                    startRecorder()
                 }
             },
             onTurnComplete = {
                 viewModelScope.launch {
                     interruptionJob?.cancel()
                     interruptionJob = null
-                    addLog("Turn complete — resuming mic")
-                    startRecorder()
+                    isTurnCompletePending = true
+                    addLog("Turn complete, waiting for playback")
+                    audioPlayer.requestCompletionSignal()
                 }
             },
             onToolCallStarted = { toolName ->
@@ -145,8 +216,18 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun startRecorder() {
-        if (isRecording) return
+    private fun startRecorder(force: Boolean = false) {
+        if (isRecording && !force) {
+            Log.d("GeminiVM", "startRecorder skipped: already recording")
+            return
+        }
+
+        if (force && isRecording) {
+            Log.d("GeminiVM", "startRecorder: forcing restart")
+            audioRecorder.stop()
+        }
+
+        Log.d("GeminiVM", "startRecorder: starting AudioRecorder")
         isRecording = true
         audioRecorder.start { audioData ->
             geminiClient.sendAudio(audioData)
@@ -210,6 +291,7 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
     override fun onCleared() {
         super.onCleared()
         stop()
+        audioPlayer.release()
         soundManager.release()
     }
 }

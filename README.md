@@ -1,6 +1,6 @@
 # Vertex Android Trucking Assistant
 
-A hands-free, voice-activated "CB Radio" style AI assistant designed specifically for truck drivers. It leverages **Vertex AI (Enterprise)** over WebSockets using the **`gemini-live-2.5-flash-preview-native-audio-09-2025`** model to provide real-time, bi-directional voice interaction natively on Android devices (like the Samsung Galaxy Tab Active 5).
+A hands-free, voice-activated "CB Radio" style AI assistant designed specifically for truck drivers. It leverages **Vertex AI (Enterprise)** over WebSockets using **`gemini-live-2.5-flash-native-audio`** (GA stable) model to provide real-time, bi-directional voice interaction natively on Android devices (like as Samsung Galaxy Tab Active 5).
 
 ## App Logic & Architecture
 
@@ -13,7 +13,7 @@ The application is built completely natively in Kotlin using Jetpack Compose and
 
 ### Network Layer
 
-*   **`network/GeminiWebSocketClient.kt`**: The workhorse of the application. It opens a persistent OkHttp WebSocket connection to the Vertex AI `LlmBidiService/BidiGenerateContent` endpoint. Upon connecting, it sends a configuration payload configuring the `gemini-live-2.5-flash-preview-native-audio-09-2025` model for `AUDIO` responsiveness and provides the system instructions (prompting it to act as a Swift Transportation trucking copilot). It handles routing inbound messages (dispatching audio to playback, parsing text transcripts, handling server tool calls).
+*   **`network/GeminiWebSocketClient.kt`**: The workhorse of application. It opens a persistent OkHttp WebSocket connection to Vertex AI `LlmBidiService/BidiGenerateContent` endpoint. Upon connecting, it sends a configuration payload configuring `gemini-live-2.5-flash-native-audio` (GA stable) model for `AUDIO` responsiveness and provides system instructions (prompting it to act as a Swift Transportation trucking copilot). It handles routing inbound messages (dispatching audio to playback, parsing text transcripts, handling server tool calls).
 *   **`network/GeminiModels.kt`**: Contains the data classes and enums mapping to the Gemini WebSocket JSON protocol (such as `FunctionDeclaration`, `ToolCall`, and `GeminiState`).
 
 ### Audio Pipeline
