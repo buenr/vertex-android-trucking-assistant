@@ -96,7 +96,9 @@ class AudioPlayer {
                 // Convert to stereo just-in-time if needed
                 val dataToPlay = monoToStereo(audioData)
 
-                synchronized(lock) {
+                // Extract pre-roll data outside the lock to avoid deadlock
+                // AudioTrack.write() is blocking I/O - must not hold lock during write
+                val chunksToWrite = synchronized(lock) {
                     // Handle pre-roll phase: accumulate audio before starting playback
                     if (!isPreRollComplete) {
                         preRollQueue.add(dataToPlay)
@@ -107,18 +109,20 @@ class AudioPlayer {
                             Log.d("AudioPlayer", "Pre-roll complete: $preRollAccumulated bytes buffered, starting playback")
                             track.play()
 
-                            // Flush accumulated pre-roll data
-                            for (chunk in preRollQueue) {
-                                writeToTrack(track, chunk)
-                            }
+                            // Return chunks to write outside the lock
+                            val chunks = preRollQueue.toList()
                             preRollQueue.clear()
+                            return@synchronized chunks
                         }
-                        return
+                        null
+                    } else {
+                        // Not in pre-roll, return the single chunk to write
+                        listOf(dataToPlay)
                     }
                 }
 
-                // Normal playback after pre-roll
-                writeToTrack(track, dataToPlay)
+                // Write outside the lock to prevent ANR/deadlock
+                chunksToWrite?.forEach { chunk -> writeToTrack(track, chunk) }
             } catch (e: Exception) {
                 Log.e("AudioPlayer", "Error writing to AudioTrack", e)
             }
