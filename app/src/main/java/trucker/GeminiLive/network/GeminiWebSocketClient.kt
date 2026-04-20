@@ -182,6 +182,12 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
                         }
                     }
                 }
+                putJsonObject("realtimeInputConfig") {
+                    putJsonObject("automaticActivityDetection") {
+                        put("startOfSpeechSensitivity", "START_SENSITIVITY_LOW")
+                        put("endOfSpeechSensitivity", "END_SENSITIVITY_LOW")
+                    }
+                }
                 putJsonArray("tools") {
                     addJsonObject {
                         putJsonArray("functionDeclarations") {
@@ -357,18 +363,7 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
             Log.e("GeminiWS", "Error parsing message", e)
         }
     }
-private fun updateVADSensitivity(enabled: Boolean) {
-    val currentWs = webSocket ?: return
-    val configJson = buildJsonObject {
-        putJsonObject("realtimeInputConfig") {
-            putJsonObject("automaticActivityDetection") {
-                // Reduce sensitivity while speaking, but keep valid LOW/HIGH levels.
-                put("disabled", true)
-            }
-        }
-    }
-    currentWs.send(configJson.toString())
-}
+
     private fun handleServerContent(contentObj: JsonObject) {
         val modelTurnKey = if (contentObj.containsKey("modelTurn")) "modelTurn" else "model_turn"
         if (contentObj.containsKey(modelTurnKey)) {
