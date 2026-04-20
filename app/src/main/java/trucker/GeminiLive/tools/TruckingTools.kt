@@ -125,6 +125,14 @@ object TruckingTools {
                     type = "object",
                     properties = emptyMap()
                 )
+            ),
+            FunctionDeclaration(
+                name = "closeApp",
+                description = "Closes the Swift Copilot application when the driver explicitly requests to exit, quit, or close the app. Invocation condition: call ONLY when the driver specifically says they want to close the app, exit the app, quit the app, or similar explicit requests to end the session. Do NOT call for general sign-offs or goodbyes.",
+                parameters = Schema(
+                    type = "object",
+                    properties = emptyMap()
+                )
             )
         )
     )
@@ -577,6 +585,13 @@ object TruckingTools {
                         put("phone", "877-772-1846")
                         put("text", "602-559-1675")
                     })
+                }
+            }
+
+            "closeApp" -> {
+                buildJsonObject {
+                    put("action", "close_app")
+                    put("message", "Closing Swift Copilot as requested. Safe travels!")
                 }
             }
 

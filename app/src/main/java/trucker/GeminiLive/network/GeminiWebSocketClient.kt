@@ -18,6 +18,7 @@ class GeminiWebSocketClient(
     private val onInterrupted: () -> Unit,
     private val onTurnComplete: () -> Unit,
     private val onToolCallStarted: (String) -> Unit,
+    private val onCloseAppRequested: () -> Unit,
     private val onError: (String) -> Unit
 ) {
     companion object {
@@ -54,6 +55,7 @@ AVAILABLE TOOLS - Invoke these when drivers ask:
 - getNextLoadDetails: Pre-dispatch load information
 - getMentorFAQs: Driver mentor program info
 - getOwnerOperatorFAQs: Owner-operator program info
+- closeApp: Close the app when driver explicitly requests to exit or quit
 
 RESPONSE GUIDELINES:
 1. Summarize key information in 1-2 sentences
@@ -259,6 +261,10 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
                                 put("name", "getOwnerOperatorFAQs")
                                 put("description", "Returns owner-operator program details including lease options and pay structure. Call when driver asks about owning their own truck.")
                             }
+                            addJsonObject {
+                                put("name", "closeApp")
+                                put("description", "Closes the Swift Copilot app when the driver explicitly requests to exit, quit, or close. Call ONLY when driver specifically says they want to close the app or exit. Do NOT call for general goodbyes.")
+                            }
                         }
                     }
                 }
@@ -426,6 +432,13 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
                     Log.d("GeminiWS", "Executing tool: ${call.name}")
                     val result = TruckingTools.handleToolCall(call.name, call.args)
                     Log.d("GeminiWS", "Tool result for ${call.name}: $result")
+                    
+                    // Check if this is a closeApp request
+                    if (call.name == "closeApp") {
+                        Log.d("GeminiWS", "closeApp tool called - triggering close callback")
+                        onCloseAppRequested()
+                    }
+                    
                     call.name to (call.id to result)
                 }
 

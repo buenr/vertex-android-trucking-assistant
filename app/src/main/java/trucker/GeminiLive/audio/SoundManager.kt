@@ -140,6 +140,28 @@ class SoundManager {
         }
     }
 
+    fun playShutdownChime() {
+        Log.d("SoundManager", "playShutdownChime()")
+        scope.launch {
+            try {
+                synchronized(lock) {
+                    // Pleasant descending tones to signal app closing
+                    toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP2, 150)
+                }
+                delay(200)
+                synchronized(lock) {
+                    toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 100)
+                }
+                delay(150)
+                synchronized(lock) {
+                    toneGenerator?.startTone(ToneGenerator.TONE_CDMA_PIP, 200)
+                }
+            } catch (e: Exception) {
+                Log.e("SoundManager", "Error in playShutdownChime", e)
+            }
+        }
+    }
+
     fun release() {
         Log.d("SoundManager", "release()")
         stopLoop()

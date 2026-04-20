@@ -8,6 +8,9 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
 import android.util.Log
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Manages Bluetooth SCO (Synchronous Connection-Oriented) audio routing for trucker headsets.
@@ -22,6 +25,15 @@ class BluetoothScoManager(private val context: Context) {
     @Volatile private var isScoConnected = false
     @Volatile private var isStarted = false
     
+    private val _scoConnectionState = MutableStateFlow<ScoState>(ScoState.Disconnected)
+    val scoConnectionState: StateFlow<ScoState> = _scoConnectionState.asStateFlow()
+    
+    sealed class ScoState {
+        object Disconnected : ScoState()
+        object Connecting : ScoState()
+        object Connected : ScoState()
+    }
+    
     private val scoReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -31,13 +43,16 @@ class BluetoothScoManager(private val context: Context) {
                         AudioManager.SCO_AUDIO_STATE_CONNECTED -> {
                             Log.d("BluetoothScoManager", "SCO audio connected")
                             isScoConnected = true
+                            _scoConnectionState.value = ScoState.Connected
                         }
                         AudioManager.SCO_AUDIO_STATE_DISCONNECTED -> {
                             Log.d("BluetoothScoManager", "SCO audio disconnected")
                             isScoConnected = false
+                            _scoConnectionState.value = ScoState.Disconnected
                         }
                         AudioManager.SCO_AUDIO_STATE_CONNECTING -> {
                             Log.d("BluetoothScoManager", "SCO audio connecting...")
+                            _scoConnectionState.value = ScoState.Connecting
                         }
                         else -> {
                             Log.w("BluetoothScoManager", "Unknown SCO state: $state")
@@ -55,6 +70,8 @@ class BluetoothScoManager(private val context: Context) {
     /**
      * Starts Bluetooth SCO connection. Call this before starting audio recording/playback
      * to ensure audio routes through the connected Bluetooth headset.
+     * 
+     * @return true if SCO start was requested, false if SCO is not available
      */
     fun start(): Boolean {
         if (isStarted) {
@@ -83,6 +100,7 @@ class BluetoothScoManager(private val context: Context) {
         }
         
         // Start SCO connection
+        _scoConnectionState.value = ScoState.Connecting
         audioManager.startBluetoothSco()
         audioManager.isBluetoothScoOn = true
         isStarted = true
@@ -117,6 +135,7 @@ class BluetoothScoManager(private val context: Context) {
         
         isStarted = false
         isScoConnected = false
+        _scoConnectionState.value = ScoState.Disconnected
     }
     
     /**

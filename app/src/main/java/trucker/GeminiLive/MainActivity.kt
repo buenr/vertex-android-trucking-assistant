@@ -362,11 +362,12 @@ fun StateIndicator(state: GeminiState, currentTool: String, onStop: () -> Unit) 
     }
 
     // Stable animations that don't change based on state
+    // Reduced to 1 frame per second to prevent UI thrashing on lower-end tablets
     val scale by infiniteTransition.animateFloat(
         initialValue = 1f,
         targetValue = 1.15f,
         animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = FastOutSlowInEasing),
+            animation = tween(1000, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "scale"
@@ -376,7 +377,7 @@ fun StateIndicator(state: GeminiState, currentTool: String, onStop: () -> Unit) 
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
+            animation = tween(36000, easing = LinearEasing), // 36 seconds for full rotation = ~1fps
             repeatMode = RepeatMode.Restart
         ),
         label = "rotation"

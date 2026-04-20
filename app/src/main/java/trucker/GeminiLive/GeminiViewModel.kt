@@ -12,11 +12,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import trucker.geminilive.audio.AudioPlayer
 import trucker.geminilive.audio.AudioRecorder
 import trucker.geminilive.audio.BluetoothScoManager
+import trucker.geminilive.audio.BluetoothScoManager.ScoState
 import trucker.geminilive.audio.SoundManager
 import trucker.geminilive.network.GeminiState
 import trucker.geminilive.network.GeminiWebSocketClient
@@ -214,6 +217,15 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
                 updateUi { it.copy(currentTool = toolName) }
                 addLog("TOOL CALL: $toolName")
             },
+            onCloseAppRequested = {
+                viewModelScope.launch {
+                    addLog("Driver requested app close via voice command")
+                    soundManager.playShutdownChime()
+                    stop()
+                    // Trigger app close
+                    onCloseApp?.invoke()
+                }
+            },
             onError = { error ->
                 addLog("ERROR: $error")
                 updateUi { it.copy(lastError = error, status = "Error") }
@@ -278,14 +290,6 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
         // Start network monitoring for active session
         startNetworkMonitoring()
 
-        // Start Bluetooth SCO for trucker headsets
-        if (bluetoothScoManager.isHeadsetAvailable()) {
-            addLog("Bluetooth headset detected, starting SCO...")
-            bluetoothScoManager.start()
-        } else {
-            addLog("No Bluetooth headset, using phone audio")
-        }
-
         // Immediate reset for a clean start
         _uiState.value = GeminiUiState(
             isConnected = true,
@@ -299,8 +303,26 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
             isDisabledDueToSlowNetwork = false
         )
         addLog("Starting session...")
+        
         viewModelScope.launch {
             try {
+                // Start Bluetooth SCO for trucker headsets and wait for connection
+                if (bluetoothScoManager.isHeadsetAvailable()) {
+                    addLog("Bluetooth headset detected, starting SCO...")
+                    bluetoothScoManager.start()
+                    
+                    // Wait for SCO connection (with timeout)
+                    val scoConnected = waitForScoConnection()
+                    if (scoConnected) {
+                        addLog("SCO connected, proceeding with session")
+                    } else {
+                        addLog("SCO connection timeout, proceeding anyway")
+                    }
+                } else {
+                    addLog("No Bluetooth headset, using phone audio")
+                }
+                
+                // Now connect to WebSocket after SCO is ready
                 val token = VertexAuth.getAccessToken(getApplication())
                 geminiClient.connect(token)
             } catch (e: Exception) {
@@ -308,6 +330,19 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
                 addLog("Connection failed: ${e.message}")
             }
         }
+    }
+    
+    /**
+     * Waits for Bluetooth SCO connection with a 3-second timeout.
+     * Returns true if connected, false if timeout or no SCO available.
+     */
+    private suspend fun waitForScoConnection(): Boolean {
+        return withTimeoutOrNull(3000L) {
+            bluetoothScoManager.scoConnectionState.first { state ->
+                state == ScoState.Connected
+            }
+            true
+        } ?: false
     }
 
     private fun stop() {

@@ -37,6 +37,13 @@ The application is built completely natively in Kotlin using Jetpack Compose and
     *   `getFuelNetworkRouting`: Approved in-network fuel routing logic.
     *   `getContacts`: Swift Transportation departments and personnel contact info.
     *   `getNextLoadDetails`: Details on the next scheduled load (pre-dispatch).
+    *   `closeApp`: Gracefully closes the application when the driver explicitly requests to exit.
+
+### Bluetooth Headset Support
+
+The app supports Bluetooth headsets commonly used by truck drivers (e.g., BlueParrott, Blue Tiger). When a Bluetooth headset is detected, the app automatically establishes an SCO (Synchronous Connection-Oriented) audio connection for hands-free operation. This is managed by:
+
+*   **`audio/BluetoothScoManager.kt`**: Handles Bluetooth SCO connection lifecycle, automatically connecting to paired headsets when a session starts and disconnecting when the session ends. This ensures crystal-clear audio input/output through the driver's headset.
 
 ### What Can You Ask? (Example Prompts)
 
@@ -51,6 +58,7 @@ With the tools implemented above, the driver can naturally ask the copilot quest
 *   **"What is the company policy on having a dog in the truck?"** *(Triggers `getCompanyFAQs`)*
 *   **"How do I reach my driver leader or payroll?"** *(Triggers `getContacts`)*
 *   **"What's my next load after this one?"** *(Triggers `getNextLoadDetails`)*
+*   **"Close the app"** or **"Exit"** *(Triggers `closeApp` - gracefully ends the session and closes the application)*
 
 ## Setup Instructions
 
