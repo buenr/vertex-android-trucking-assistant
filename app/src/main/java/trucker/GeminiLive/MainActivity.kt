@@ -96,7 +96,8 @@ class MainActivity : ComponentActivity() {
                     ActivityResultContracts.RequestPermission()
                 ) { isGranted ->
                     if (isGranted) {
-                        // Permission granted
+                        // Auto-start listening when permission is granted
+                        viewModel.toggleConnection()
                     }
                 }
 
