@@ -63,16 +63,38 @@ class SoundManager {
                     ToneGenerator.TONE_CDMA_SOFT_ERROR_LITE
                 )
                 try {
+                    // Start with a guaranteed long beep to simulate immediate API call
+                    synchronized(lock) {
+                        toneGenerator?.startTone(tones[0], Random.nextInt(3000, 6001))
+                    }
+                    delay(100) // Brief pause before the random loop
+                    
                     while (isActive) {
                         val tone = tones[Random.nextInt(tones.size)]
-                        val duration = Random.nextInt(30, 60)
+                        
+                        // Randomly choose between short beeps (30-60ms) and long beeps (3-6s)
+                        val isLongBeep = Random.nextInt(2) == 0 // 50% chance for long beep
+                        val duration = if (isLongBeep) {
+                            Random.nextInt(3000, 6001) // 3-6 second beeps for API latency simulation
+                        } else {
+                            Random.nextInt(30, 61) // Existing short beeps
+                        }
+                        
                         synchronized(lock) {
                             toneGenerator?.startTone(tone, duration)
                         }
-                        val nextDelay = Random.nextLong(40, 180)
+                        
+                        // Adjust delay based on beep type
+                        val nextDelay = if (isLongBeep) {
+                            Random.nextLong(200, 800) // Shorter delay after long beeps to allow more beeps
+                        } else {
+                            Random.nextLong(40, 181) // Existing short delays
+                        }
                         delay(nextDelay)
+                        
+                        // Keep existing occasional pause logic
                         if (Random.nextInt(10) == 0) {
-                            delay(Random.nextLong(150, 300))
+                            delay(Random.nextLong(150, 301))
                         }
                     }
                 } catch (e: Exception) {

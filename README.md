@@ -42,7 +42,7 @@ The application is built completely natively in Kotlin using Jetpack Compose and
 
 With the tools implemented above, the driver can naturally ask the copilot questions such as:
 *   **"What am I hauling right now and when is my next stop?"** *(Triggers `getLoadStatus`)*
-*   **"Where is the nearest Swift terminal with a shower and a maintenance shop?"** *(Triggers `findNearestSwiftTerminal`)*
+*   **"Where is the nearest Swift terminal with a maintenance shop?"** *(Triggers `findNearestSwiftTerminal`)*
 *   **"How much drive time do I have left on my clock today?"** *(Triggers `getHoursOfServiceClocks`)*
 *   **"How does my safety score look? Did that hard brake yesterday affect my bonus?"** *(Triggers `checkSafetyScore`)*
 *   **"Where should I get fuel next on this route?"** *(Triggers `getFuelNetworkRouting`)*

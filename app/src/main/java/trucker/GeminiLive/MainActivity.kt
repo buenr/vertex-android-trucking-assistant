@@ -4,6 +4,8 @@ import android.Manifest
 import android.app.Activity
 import android.os.Bundle
 import android.view.WindowManager
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
@@ -36,17 +39,58 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import trucker.geminilive.network.GeminiState
-import trucker.geminilive.ui.theme.MyApplicationTheme
+import trucker.geminilive.network.NetworkSpeedMonitor
+import trucker.geminilive.ui.theme.TruckerAssistAudioTheme
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Run pre-flight network check before initializing app
+        val networkMonitor = NetworkSpeedMonitor(application)
+
+        lifecycleScope.launch {
+            val isHealthy = networkMonitor.isConnectionHealthy()
+
+            if (!isHealthy) {
+                Toast.makeText(
+                    this@MainActivity,
+                    "Connection too weak for Gemini Live (>100kbps required)",
+                    Toast.LENGTH_LONG
+                ).show()
+                delay(2000)
+                finishAffinity()
+            } else {
+                // Proceed with normal app initialization
+                startApp()
+            }
+        }
+    }
+
+    private fun startApp() {
         setContent {
-            MyApplicationTheme {
+            TruckerAssistAudioTheme {
                 KeepScreenOn()
                 val viewModel: GeminiViewModel = viewModel()
-                val uiState = viewModel.uiState.value
+                val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+                val context = LocalContext.current
+
+                // Set up callback to close app on zero-speed timeout
+                LaunchedEffect(viewModel) {
+                    viewModel.onCloseApp = {
+                        Toast.makeText(
+                            context,
+                            "Closing app - no network for 6 seconds (3 polls)",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        finish()
+                    }
+                }
 
                 val permissionLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission()
@@ -110,8 +154,44 @@ fun CopilotScreen(
             text = "Swift Copilot",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 24.dp)
+            modifier = Modifier.padding(bottom = 8.dp)
         )
+
+        // Network Speed Indicator
+        NetworkSpeedIndicator(
+            speedKbps = uiState.networkSpeedKbps,
+            isSufficient = uiState.isNetworkSpeedSufficient,
+            networkType = uiState.networkType,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        // Slow Network Warning Banner
+        if (uiState.isDisabledDueToSlowNetwork) {
+            Surface(
+                color = Color(0xFFFFCDD2), // Light red
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "⚠️ Connection lost (no data for 3s)",
+                        color = Color(0xFFB71C1C), // Dark red
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "${uiState.networkSpeedKbps.toInt()} kbps",
+                        color = Color(0xFFB71C1C),
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
 
         // Main Interaction Area
         Box(
@@ -121,13 +201,19 @@ fun CopilotScreen(
             contentAlignment = Alignment.Center
         ) {
             if (!uiState.isConnected) {
-                Button(
-                    onClick = onToggle,
-                    modifier = Modifier.size(160.dp),
-                    shape = CircleShape,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20))
-                ) {
-                    Text("START", fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Button(
+                        onClick = onToggle,
+                        modifier = Modifier.size(160.dp),
+                        shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20))
+                    ) {
+                        Text(
+                            "START",
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
                 }
             } else {
                 StateIndicator(uiState.aiState, uiState.currentTool, onToggle)
@@ -204,6 +290,53 @@ fun CopilotScreen(
 }
 
 @Composable
+fun NetworkSpeedIndicator(
+    speedKbps: Float,
+    isSufficient: Boolean,
+    networkType: String,
+    modifier: Modifier = Modifier
+) {
+    val (backgroundColor, textColor) = when {
+        !isSufficient -> Pair(Color(0xFFFFCDD2), Color(0xFFB71C1C)) // Light red, dark red
+        speedKbps >= 500 -> Pair(Color(0xFFC8E6C9), Color(0xFF1B5E20)) // Light green, dark green
+        speedKbps >= 200 -> Pair(Color(0xFFFFF9C4), Color(0xFFF57F17)) // Light yellow, dark amber
+        else -> Pair(Color(0xFFFFF9C4), Color(0xFFF57F17)) // Marginal - yellow
+    }
+
+    Surface(
+        color = backgroundColor,
+        shape = MaterialTheme.shapes.small,
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = networkType.uppercase(),
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                color = textColor
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "${speedKbps.toInt()} kbps",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = textColor
+            )
+            if (!isSufficient) {
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "⚠️",
+                    fontSize = 12.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun StateIndicator(state: GeminiState, currentTool: String, onStop: () -> Unit) {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     
@@ -228,9 +361,10 @@ fun StateIndicator(state: GeminiState, currentTool: String, onStop: () -> Unit) 
         else -> state.label
     }
 
+    // Stable animations that don't change based on state
     val scale by infiniteTransition.animateFloat(
         initialValue = 1f,
-        targetValue = if (state == GeminiState.LISTENING || state == GeminiState.SPEAKING) 1.15f else 1f,
+        targetValue = 1.15f,
         animationSpec = infiniteRepeatable(
             animation = tween(800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -240,13 +374,30 @@ fun StateIndicator(state: GeminiState, currentTool: String, onStop: () -> Unit) 
 
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f,
-        targetValue = if (state == GeminiState.WORKING || state == GeminiState.THINKING) 360f else 0f,
+        targetValue = 360f,
         animationSpec = infiniteRepeatable(
             animation = tween(2000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "rotation"
     )
+
+    // Use derived state to prevent rapid changes that cause NaN frame rates
+    val shouldScale = remember(state) {
+        state == GeminiState.LISTENING || state == GeminiState.SPEAKING
+    }
+    
+    val shouldRotate = remember(state) {
+        state == GeminiState.WORKING || state == GeminiState.THINKING
+    }
+    
+    val effectiveScale = remember(shouldScale, scale) {
+        if (shouldScale) scale else 1f
+    }
+    
+    val effectiveRotation = remember(shouldRotate, rotation) {
+        if (shouldRotate) rotation else 0f
+    }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -256,7 +407,7 @@ fun StateIndicator(state: GeminiState, currentTool: String, onStop: () -> Unit) 
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .size(220.dp)
-                .scale(scale)
+                .scale(effectiveScale)
                 .clip(CircleShape)
                 .background(color.copy(alpha = 0.2f))
                 .border(8.dp, color, CircleShape)
@@ -266,7 +417,7 @@ fun StateIndicator(state: GeminiState, currentTool: String, onStop: () -> Unit) 
                 contentDescription = null,
                 modifier = Modifier
                     .size(80.dp)
-                    .rotate(rotation),
+                    .rotate(effectiveRotation),
                 tint = if (color == Color.White) Color.Black else color
             )
         }
