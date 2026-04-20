@@ -8,7 +8,7 @@ import kotlin.random.Random
 
 class SoundManager {
     private val lock = Any()
-    private var toneGenerator: ToneGenerator? = ToneGenerator(AudioManager.STREAM_MUSIC, 60)
+    private var toneGenerator: ToneGenerator? = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
     private var loopingJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -114,6 +114,28 @@ class SoundManager {
                 Log.v("SoundManager", "stopLoop()")
                 loopingJob?.cancel()
                 loopingJob = null
+            }
+        }
+    }
+
+    fun playErrorChime() {
+        Log.d("SoundManager", "playErrorChime()")
+        scope.launch {
+            try {
+                synchronized(lock) {
+                    // Distinct descending tones to signal disconnection/error
+                    toneGenerator?.startTone(ToneGenerator.TONE_CDMA_SOFT_ERROR_LITE, 200)
+                }
+                delay(250)
+                synchronized(lock) {
+                    toneGenerator?.startTone(ToneGenerator.TONE_CDMA_SOFT_ERROR_LITE, 150)
+                }
+                delay(200)
+                synchronized(lock) {
+                    toneGenerator?.startTone(ToneGenerator.TONE_PROP_NACK, 300)
+                }
+            } catch (e: Exception) {
+                Log.e("SoundManager", "Error in playErrorChime", e)
             }
         }
     }

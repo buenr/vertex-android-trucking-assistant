@@ -217,6 +217,7 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
             onError = { error ->
                 addLog("ERROR: $error")
                 updateUi { it.copy(lastError = error, status = "Error") }
+                soundManager.playErrorChime()
                 stop()
             }
         )
@@ -340,6 +341,7 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
                 Log.d("GeminiVM", "Zero speed timeout received! isConnected=${uiState.value.isConnected}")
                 if (uiState.value.isConnected) {
                     addLog("Zero speed detected for 3 seconds - stopping session")
+                    soundManager.playErrorChime()
                     stop()
                 }
                 // Show warning and close the app
