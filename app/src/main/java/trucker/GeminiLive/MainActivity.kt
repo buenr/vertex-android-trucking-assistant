@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import trucker.geminilive.network.GeminiState
 import trucker.geminilive.network.NetworkSpeedMonitor
+import trucker.geminilive.tools.ToolCallLogger
 import trucker.geminilive.ui.theme.TruckerAssistAudioTheme
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -49,6 +50,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        // Initialize the tool call logger
+        ToolCallLogger.init(applicationContext)
 
         // Run pre-flight network check before initializing app
         val networkMonitor = NetworkSpeedMonitor(application)
@@ -70,6 +74,16 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    
+    override fun onPause() {
+        super.onPause()
+        ToolCallLogger.flush()
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        ToolCallLogger.flush()
+    }
 
     private fun startApp() {
         setContent {
@@ -83,6 +97,7 @@ class MainActivity : ComponentActivity() {
                 // Set up callback to close app on zero-speed timeout
                 LaunchedEffect(viewModel) {
                     viewModel.onCloseApp = {
+                        ToolCallLogger.flush() // Flush logs before closing
                         Toast.makeText(
                             context,
                             "Closing app - no network for 6 seconds (3 polls)",

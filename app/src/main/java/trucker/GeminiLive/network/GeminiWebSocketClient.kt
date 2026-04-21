@@ -7,6 +7,7 @@ import okhttp3.*
 import okio.ByteString
 import trucker.geminilive.audio.AudioConfig
 import trucker.geminilive.tools.TruckingTools
+import trucker.geminilive.tools.ToolCallLogger
 import java.util.concurrent.TimeUnit
 
 class GeminiWebSocketClient(
@@ -430,8 +431,20 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
             try {
                 val results = toolCall.functionCalls.map { call ->
                     Log.d("GeminiWS", "Executing tool: ${call.name}")
+                    val startTime = System.currentTimeMillis()
                     val result = TruckingTools.handleToolCall(call.name, call.args)
+                    val responseTimeMs = System.currentTimeMillis() - startTime
                     Log.d("GeminiWS", "Tool result for ${call.name}: $result")
+                    
+                    // Log the tool call metrics
+                    val driverId = extractDriverId(result)
+                    ToolCallLogger.logCall(
+                        functionName = call.name,
+                        driverId = driverId,
+                        arguments = call.args,
+                        responseTimeMs = responseTimeMs,
+                        success = true
+                    )
                     
                     // Check if this is a closeApp request
                     if (call.name == "closeApp") {
@@ -473,6 +486,19 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
         isModelSpeaking.set(false)
         webSocket?.close(1000, "Disconnect")
         webSocket = null
+    }
+    
+    /**
+     * Extract driver_id from tool result JSON for logging purposes.
+     */
+    private fun extractDriverId(result: JsonElement): String {
+        return try {
+            (result as? JsonObject)?.get("driver_id")?.let { 
+                (it as? JsonPrimitive)?.content 
+            } ?: "unknown"
+        } catch (e: Exception) {
+            "unknown"
+        }
     }
 }
 

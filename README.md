@@ -39,6 +39,38 @@ The application is built completely natively in Kotlin using Jetpack Compose and
     *   `getNextLoadDetails`: Details on the next scheduled load (pre-dispatch).
     *   `closeApp`: Gracefully closes the application when the driver explicitly requests to exit.
 
+### Tool Call Logging
+
+The app logs all tool/function calls for analytics and metrics tracking. This helps understand driver usage patterns and identify frequently used features.
+
+*   **`tools/ToolCallLogger.kt`**: Singleton logger that batches tool call metrics in memory and periodically flushes to disk.
+
+**Logged metrics per call:**
+- Timestamp (ISO 8601)
+- Function name
+- Driver ID
+- Arguments passed (if any)
+- Response time (milliseconds)
+- Success status
+
+**Log file location:**  
+`/storage/emulated/0/Android/data/trucker.geminilive/files/tool_calls_log.jsonl`
+
+**Log format:** JSON Lines (one JSON object per line)
+```json
+{"timestamp":"2026-04-21T14:30:45.123-0700","functionName":"getLoadStatus","driverId":"284145","arguments":null,"responseTimeMs":12,"success":true}
+```
+
+**Retrieving logs:**
+```bash
+adb pull /storage/emulated/0/Android/data/trucker.geminilive/files/tool_calls_log.jsonl
+```
+
+**Behavior:**
+- Batches writes in memory (auto-flushes every 10 calls)
+- Flushes on app pause, destroy, or network timeout
+- File grows indefinitely (no rotation)
+
 ### Bluetooth Headset Support
 
 The app supports Bluetooth headsets commonly used by truck drivers (e.g., BlueParrott, Blue Tiger). When a Bluetooth headset is detected, the app automatically establishes an SCO (Synchronous Connection-Oriented) audio connection for hands-free operation. This is managed by:
