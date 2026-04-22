@@ -29,6 +29,15 @@ class AudioRecorder {
     private val batchBuffer = mutableListOf<ByteArray>()
     private var onAudioDataCallback: ((ByteArray) -> Unit)? = null
     private var lastSendTime = 0L
+    
+    // Voice Activity Detection (VAD) for poor network conditions
+    // Saves 100% bandwidth during silence by not transmitting silent frames
+    @Volatile
+    private var vadEnabled = false
+    private val VAD_ENERGY_THRESHOLD = 500  // RMS energy threshold for speech detection
+    private val VAD_HANGOVER_MS = 300       // Continue sending for 300ms after speech ends
+    private var isCurrentlySpeaking = false
+    private var lastSpeechTimestamp = 0L
 
     @SuppressLint("MissingPermission")
     fun start(onAudioData: (ByteArray) -> Unit) {
@@ -107,8 +116,33 @@ class AudioRecorder {
                                             System.arraycopy(staging, targetChunkSize, staging, 0, remaining)
                                         }
                                         stagedBytes = remaining
-                                        // Batch chunks for efficient network transfer
-                                        addToBatch(chunk, onAudioData)
+                                        
+                                        // Apply VAD: skip silent frames when VAD is enabled on poor connections
+                                        if (vadEnabled) {
+                                            val rms = calculateRmsEnergy(chunk)
+                                            val now = System.currentTimeMillis()
+                                            
+                                            if (rms > VAD_ENERGY_THRESHOLD) {
+                                                // Speech detected
+                                                isCurrentlySpeaking = true
+                                                lastSpeechTimestamp = now
+                                                addToBatch(chunk, onAudioData)
+                                            } else if (isCurrentlySpeaking) {
+                                                // Silence but within hangover period - continue sending
+                                                if (now - lastSpeechTimestamp < VAD_HANGOVER_MS) {
+                                                    addToBatch(chunk, onAudioData)
+                                                } else {
+                                                    // Hangover expired, stop sending
+                                                    isCurrentlySpeaking = false
+                                                    // Flush any pending batch before going silent
+                                                    flushBatch(onAudioData)
+                                                }
+                                            }
+                                            // If not speaking and past hangover, skip this frame entirely
+                                        } else {
+                                            // Normal operation: batch all chunks
+                                            addToBatch(chunk, onAudioData)
+                                        }
                                     }
 
                                     if (stagedBytes == staging.size) {
@@ -156,6 +190,48 @@ class AudioRecorder {
             }
         }
     }
+
+    /**
+     * Calculates RMS (Root Mean Square) energy of a 16-bit PCM audio frame.
+     * Higher values indicate louder audio. Used for VAD to detect speech vs silence.
+     */
+    private fun calculateRmsEnergy(pcmData: ByteArray): Double {
+        var sumSquares = 0.0
+        var sampleCount = 0
+        
+        // Process as 16-bit little-endian samples
+        for (i in 0 until pcmData.size step 2) {
+            if (i + 1 >= pcmData.size) break
+            
+            val sample = ((pcmData[i + 1].toInt() shl 8) or (pcmData[i].toInt() and 0xFF)).toShort()
+            sumSquares += sample.toDouble() * sample.toDouble()
+            sampleCount++
+        }
+        
+        return if (sampleCount > 0) kotlin.math.sqrt(sumSquares / sampleCount) else 0.0
+    }
+
+    /**
+     * Enables or disables Voice Activity Detection.
+     * When enabled on poor connections, only speech frames are transmitted.
+     */
+    fun setVadEnabled(enabled: Boolean) {
+        if (vadEnabled != enabled) {
+            vadEnabled = enabled
+            isCurrentlySpeaking = false  // Reset state on toggle
+            Log.d("AudioRecorder", "VAD ${if (enabled) "enabled" else "disabled"} (threshold: $VAD_ENERGY_THRESHOLD, hangover: ${VAD_HANGOVER_MS}ms)")
+        }
+    }
+
+    /**
+     * Returns whether VAD is currently active.
+     */
+    fun isVadEnabled(): Boolean = vadEnabled
+
+    /**
+     * Returns whether VAD has currently detected active speech.
+     */
+    fun isCurrentlySpeaking(): Boolean = isCurrentlySpeaking
 
     /**
      * Down-mixes stereo 16-bit PCM to mono by averaging the left and right channels.

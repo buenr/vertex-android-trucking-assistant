@@ -3,11 +3,12 @@ package trucker.geminilive.network
 import android.util.Base64
 import android.util.Log
 import kotlinx.serialization.json.*
+import kotlinx.coroutines.*
 import okhttp3.*
 import okio.ByteString
 import trucker.geminilive.audio.AudioConfig
 import trucker.geminilive.tools.TruckingTools
-import trucker.geminilive.tools.ToolCallLogger
+import trucker.geminilive.tools.ToolCal lLogger
 import java.util.concurrent.TimeUnit
 
 /**
@@ -19,6 +20,13 @@ enum class ConnectionState {
     CONNECTED,
     READY,
     STALE
+}
+
+enum class ConnectionQuality {
+    EXCELLENT,  // RTT < 100ms
+    GOOD,       // RTT 100-200ms
+    DEGRADED,   // RTT 200-300ms
+    POOR        // RTT > 300ms
 }
 
 /**
@@ -66,6 +74,17 @@ class GeminiWebSocketClient(
             .build()
 
         private const val STALE_THRESHOLD_MS = 30_000L // 30 seconds (reduced from 60s)
+        
+        // RTT thresholds for connection quality (ms)
+        private const val RTT_THRESHOLD_EXCELLENT = 100L
+        private const val RTT_THRESHOLD_GOOD = 200L
+        private const val RTT_THRESHOLD_DEGRADED = 300L
+        
+        // Adaptive audio batch sizes (ms)
+        private const val BATCH_SIZE_EXCELLENT = 100L
+        private const val BATCH_SIZE_GOOD = 150L
+        private const val BATCH_SIZE_DEGRADED = 250L
+        private const val BATCH_SIZE_POOR = 400L
 
         private const val SYSTEM_PROMPT = """You are the Swift Transportation Trucking Copilot, an AI-powered voice assistant for professional truck drivers. You operate hands-free in the cab, providing real-time information through natural voice conversation.
 
@@ -134,13 +153,20 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
     private val isModelSpeaking = java.util.concurrent.atomic.AtomicBoolean(false)
     private val json = Json { ignoreUnknownKeys = true }
     private val connectionTracker = ConnectionTracker()
+    
+    // RTT tracking for connection quality
+    private var lastPingTimestamp = 0L
+    private var currentRttMs = 0L
+    private val rttHistory = ArrayDeque<Long>(10)
+    private var currentConnectionQuality = ConnectionQuality.EXCELLENT
+    private var adaptiveBatchSizeMs = BATCH_SIZE_EXCELLENT
 
     // Reconnection state
     private var reconnectAttempts = 0
     private val maxReconnectAttempts = 3
     private val reconnectDelaysMs = listOf(1000L, 2000L, 4000L)
     private var lastAccessToken: String? = null
-    private var reconnectJob: kotlinx.coroutines.Job? = null
+    private var reconnectJob: Job? = null
 
     private fun createWebSocketListener() = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -158,6 +184,15 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
 
         override fun onMessage(webSocket: WebSocket, text: String) {
             connectionTracker.updateActivity()
+            
+            // Check for pong response (empty frame or specific pong message)
+            if (text.isEmpty() || text == "{}") {
+                val rtt = System.currentTimeMillis() - lastPingTimestamp
+                if (lastPingTimestamp > 0) {
+                    updateRtt(rtt)
+                }
+            }
+            
             Log.v("GeminiWS", "Received text message: $text")
             handleRawMessage(text)
         }
@@ -243,8 +278,8 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
         onStatusUpdate("Reconnecting in ${delayMs / 1000}s... (attempt $reconnectAttempts/$maxReconnectAttempts)")
 
         // Use coroutines for delayed reconnection
-        reconnectJob = kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            kotlinx.coroutines.delay(delayMs)
+        reconnectJob = CoroutineScope(Dispatchers.IO).launch {
+            delay(delayMs)
             val token = lastAccessToken
             if (token != null && connectionTracker.state == ConnectionState.DISCONNECTED) {
                 Log.d("GeminiWS", "Executing reconnect attempt $reconnectAttempts")
@@ -363,11 +398,11 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
                 return
             }
 
-        val scEl = element["serverContent"] ?: element["server_content"]
-        if (scEl != null) {
-            Log.v("GeminiWS", "Server Content found")
-            handleServerContent(scEl.jsonObject)
-        }
+            val scEl = element["serverContent"] ?: element["server_content"]
+            if (scEl != null) {
+                Log.v("GeminiWS", "Server Content found")
+                handleServerContent(scEl.jsonObject)
+            }
 
             val tcEl = element["toolCall"] ?: element["tool_call"]
             if (tcEl != null) {
@@ -400,8 +435,7 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
                 onStateChanged(GeminiState.SPEAKING)
             }
             val turnObj = contentObj[modelTurnKey]!!.jsonObject
-            val partsKey = if (turnObj.containsKey("parts")) "parts" else "parts"
-            val partsEl = turnObj[partsKey]
+            val partsEl = turnObj["parts"]
             if (partsEl != null && partsEl is JsonArray) {
                 val parts = partsEl.jsonArray
                 for (partEl in parts) {
@@ -543,6 +577,51 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
         return false
     }
     
+    /**
+     * Updates RTT measurement and recalculates connection quality.
+     */
+    private fun updateRtt(rttMs: Long) {
+        currentRttMs = rttMs
+        rttHistory.addLast(rttMs)
+        if (rttHistory.size > 10) {
+            rttHistory.removeFirst()
+        }
+        
+        val avgRtt = rttHistory.average().toLong()
+        val newQuality = when {
+            avgRtt < RTT_THRESHOLD_EXCELLENT -> ConnectionQuality.EXCELLENT
+            avgRtt < RTT_THRESHOLD_GOOD -> ConnectionQuality.GOOD
+            avgRtt < RTT_THRESHOLD_DEGRADED -> ConnectionQuality.DEGRADED
+            else -> ConnectionQuality.POOR
+        }
+        
+        if (newQuality != currentConnectionQuality) {
+            currentConnectionQuality = newQuality
+            adaptiveBatchSizeMs = when (newQuality) {
+                ConnectionQuality.EXCELLENT -> BATCH_SIZE_EXCELLENT
+                ConnectionQuality.GOOD -> BATCH_SIZE_GOOD
+                ConnectionQuality.DEGRADED -> BATCH_SIZE_DEGRADED
+                ConnectionQuality.POOR -> BATCH_SIZE_POOR
+            }
+            Log.d("GeminiWS", "Connection quality changed to $newQuality (avg RTT: ${avgRtt}ms, batch: ${adaptiveBatchSizeMs}ms)")
+        }
+    }
+    
+    /**
+     * Returns the current connection quality assessment.
+     */
+    fun getConnectionQuality(): ConnectionQuality = currentConnectionQuality
+    
+    /**
+     * Returns the current adaptive audio batch size in milliseconds.
+     */
+    fun getAdaptiveBatchSizeMs(): Long = adaptiveBatchSizeMs
+    
+    /**
+     * Returns the average RTT over the last measurements.
+     */
+    fun getAverageRttMs(): Long = if (rttHistory.isEmpty()) 0L else rttHistory.average().toLong()
+
     /**
      * Extract driver_id from tool result JSON for logging purposes.
      */

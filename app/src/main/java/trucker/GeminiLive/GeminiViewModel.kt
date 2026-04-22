@@ -20,6 +20,7 @@ import trucker.geminilive.audio.AudioRecorder
 import trucker.geminilive.audio.BluetoothScoManager
 import trucker.geminilive.audio.BluetoothScoManager.ScoState
 import trucker.geminilive.audio.SoundManager
+import trucker.geminilive.network.ConnectionQuality
 import trucker.geminilive.network.GeminiState
 import trucker.geminilive.network.GeminiWebSocketClient
 import trucker.geminilive.network.VertexAuth
@@ -41,6 +42,7 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
     private var pendingState: GeminiState? = null
     private var isRecording = false
     private var isTurnCompletePending = false
+    private var connectionQualityJob: Job? = null
     init {
         val projectId = VertexAuth.getProjectId(getApplication())
         audioPlayer.onPlaybackComplete = {
@@ -279,6 +281,9 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
         )
         addLog("Starting session...")
         
+        // Start connection quality monitoring for adaptive VAD
+        startConnectionQualityMonitoring()
+        
         viewModelScope.launch {
             try {
                 // Start Bluetooth SCO for trucker headsets and wait for connection
@@ -308,6 +313,31 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
     }
     
     /**
+     * Monitors connection quality and enables VAD when RTT > 300ms (POOR connection).
+     * VAD saves 100% bandwidth during silence by not transmitting silent frames.
+     */
+    private fun startConnectionQualityMonitoring() {
+        connectionQualityJob?.cancel()
+        connectionQualityJob = viewModelScope.launch {
+            while (uiState.value.isConnected) {
+                val quality = geminiClient.getConnectionQuality()
+                val avgRtt = geminiClient.getAverageRttMs()
+                
+                // Enable VAD on poor connections (RTT > 300ms)
+                val shouldEnableVad = quality == ConnectionQuality.POOR || avgRtt > 300
+                
+                if (audioRecorder.isVadEnabled() != shouldEnableVad) {
+                    audioRecorder.setVadEnabled(shouldEnableVad)
+                    addLog("VAD ${if (shouldEnableVad) "enabled" else "disabled"} (RTT: ${avgRtt}ms, Quality: $quality)")
+                }
+                
+                // Check every 5 seconds
+                delay(5000)
+            }
+        }
+    }
+    
+    /**
      * Waits for Bluetooth SCO connection with a 3-second timeout.
      * Returns true if connected, false if timeout or no SCO available.
      */
@@ -325,7 +355,13 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
         interruptionJob = null
         toolTimerJob?.cancel()
         toolTimerJob = null
+        connectionQualityJob?.cancel()
+        connectionQualityJob = null
         pendingState = null
+        
+        // Disable VAD when stopping
+        audioRecorder.setVadEnabled(false)
+        
         viewModelScope.launch {
             stopRecorder()
         }
