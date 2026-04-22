@@ -100,7 +100,7 @@ class MainActivity : ComponentActivity() {
                         ToolCallLogger.flush() // Flush logs before closing
                         Toast.makeText(
                             context,
-                            "Closing app - no network for 6 seconds (3 polls)",
+                            "Closing app - no network for 12 seconds (6 polls)",
                             Toast.LENGTH_LONG
                         ).show()
                         finish()

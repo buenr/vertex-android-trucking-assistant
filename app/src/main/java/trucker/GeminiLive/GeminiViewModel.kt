@@ -384,7 +384,7 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
                 updateUi {
                     it.copy(
                         isDisabledDueToSlowNetwork = true,
-                        status = "Closing - no network for 6 seconds",
+                        status = "Closing - no network for 12 seconds",
                         lastError = "Network connection dropped"
                     )
                 }

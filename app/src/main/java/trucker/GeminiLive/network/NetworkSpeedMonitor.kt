@@ -17,7 +17,7 @@ class NetworkSpeedMonitor(private val application: Application) {
     companion object {
         const val MINIMUM_SPEED_KBPS = 100f // Minimum acceptable speed in kbps
         const val POLLING_INTERVAL_MS = 2000L // Check every 2 seconds
-        const val ZERO_SPEED_POLL_COUNT = 3 // Close after 3 consecutive zero-speed polls
+        const val ZERO_SPEED_POLL_COUNT = 6 // Close after 6 consecutive low-speed polls
         private const val TAG = "NetworkSpeed"
     }
 
@@ -166,9 +166,9 @@ class NetworkSpeedMonitor(private val application: Application) {
             zeroSpeedDurationMs = zeroSpeedDurationMs
         )
 
-        // Emit timeout event after 3 consecutive low-speed polls
+        // Emit timeout event after 6 consecutive low-speed polls
         if (isTimeout) {
-            Log.e(TAG, "Shutting down: Speed remained below ${MINIMUM_SPEED_KBPS}kbps for too long.")
+            Log.e(TAG, "Shutting down: Speed remained below ${MINIMUM_SPEED_KBPS}kbps for 6 consecutive checks.")
             _zeroSpeedTimeout.tryEmit(Unit)
         }
 
