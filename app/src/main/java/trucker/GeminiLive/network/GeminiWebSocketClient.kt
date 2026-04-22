@@ -135,9 +135,20 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
     private val json = Json { ignoreUnknownKeys = true }
     private val connectionTracker = ConnectionTracker()
 
+    // Reconnection state
+    private var reconnectAttempts = 0
+    private val maxReconnectAttempts = 3
+    private val reconnectDelaysMs = listOf(1000L, 2000L, 4000L)
+    private var lastAccessToken: String? = null
+    private var reconnectJob: kotlinx.coroutines.Job? = null
+
     private fun createWebSocketListener() = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
             Log.d("GeminiWS", "WebSocket Connected: ${response.message}")
+            // Reset reconnect attempts on successful connection
+            reconnectAttempts = 0
+            reconnectJob?.cancel()
+            reconnectJob = null
             connectionTracker.state = ConnectionState.CONNECTED
             connectionTracker.connectionEstablishedTimestamp = System.currentTimeMillis()
             connectionTracker.updateActivity()
@@ -168,6 +179,7 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
             isReady.set(false)
             connectionTracker.state = ConnectionState.DISCONNECTED
             onError(errorMsg)
+            scheduleReconnect()
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
@@ -181,16 +193,27 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
             connectionTracker.state = ConnectionState.DISCONNECTED
             if (code != 1000) {
                 onError("Connection closed unexpectedly ($code)")
+                scheduleReconnect()
+            } else {
+                // Normal close - reset reconnect attempts
+                reconnectAttempts = 0
             }
         }
     }
 
     fun connect(accessToken: String) {
         disconnect()
+        reconnectJob?.cancel()
         isModelSpeaking.set(false)
         isReady.set(false)
+        reconnectAttempts = 0
+        lastAccessToken = accessToken
         connectionTracker.state = ConnectionState.CONNECTING
         connectionTracker.updateActivity()
+        performConnect(accessToken)
+    }
+
+    private fun performConnect(accessToken: String) {
         try {
             val url = "wss://us-central1-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1beta1.LlmBidiService/BidiGenerateContent"
             val request = Request.Builder()
@@ -201,6 +224,34 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
         } catch (e: Exception) {
             connectionTracker.state = ConnectionState.DISCONNECTED
             onError("Connection Error: ${e.message}")
+            scheduleReconnect()
+        }
+    }
+
+    private fun scheduleReconnect() {
+        if (reconnectAttempts >= maxReconnectAttempts) {
+            Log.w("GeminiWS", "Max reconnect attempts ($maxReconnectAttempts) reached. Giving up.")
+            onError("Connection failed after $maxReconnectAttempts attempts. Please try again manually.")
+            reconnectAttempts = 0
+            return
+        }
+
+        val delayMs = reconnectDelaysMs[reconnectAttempts]
+        reconnectAttempts++
+
+        Log.d("GeminiWS", "Scheduling reconnect attempt $reconnectAttempts/$maxReconnectAttempts in ${delayMs}ms")
+        onStatusUpdate("Reconnecting in ${delayMs / 1000}s... (attempt $reconnectAttempts/$maxReconnectAttempts)")
+
+        // Use coroutines for delayed reconnection
+        reconnectJob = kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            kotlinx.coroutines.delay(delayMs)
+            val token = lastAccessToken
+            if (token != null && connectionTracker.state == ConnectionState.DISCONNECTED) {
+                Log.d("GeminiWS", "Executing reconnect attempt $reconnectAttempts")
+                connectionTracker.state = ConnectionState.CONNECTING
+                connectionTracker.updateActivity()
+                performConnect(token)
+            }
         }
     }
 
@@ -455,6 +506,9 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
         isReady.set(false)
         isModelSpeaking.set(false)
         connectionTracker.state = ConnectionState.DISCONNECTED
+        reconnectJob?.cancel()
+        reconnectJob = null
+        reconnectAttempts = 0
         webSocket?.close(1000, "Disconnect")
         webSocket = null
     }
