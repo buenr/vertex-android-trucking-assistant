@@ -17,9 +17,9 @@ class AudioPlayer {
         AudioConfig.AUDIO_FORMAT
     ) * 20
 
-    // Pre-roll buffer: accumulate 200ms of audio before starting playback to prevent underrun
-    // 24000Hz * 2 channels * 2 bytes/sample * 0.2s = 19200 bytes
-    private val PRE_ROLL_BYTES = (AudioConfig.OUTPUT_SAMPLE_RATE * 2 * 2 * 200) / 1000
+    // Pre-roll buffer: accumulate 100ms of audio before starting playback to prevent underrun
+    // 24000Hz * 2 channels * 2 bytes/sample * 0.1s = 9600 bytes (reduced from 200ms for faster start)
+    private val PRE_ROLL_BYTES = (AudioConfig.OUTPUT_SAMPLE_RATE * 2 * 2 * 100) / 1000
 
     private val lock = Any()
     private var isBuffering = false

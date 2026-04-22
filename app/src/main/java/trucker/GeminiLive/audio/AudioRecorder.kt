@@ -23,6 +23,13 @@ class AudioRecorder {
     @Volatile
     private var isModelSpeaking = false
 
+    // Batch audio chunks to reduce network overhead on LTE
+    // Accumulate 100ms of audio (5x 20ms chunks) before sending
+    private val BATCH_SIZE_MS = 100
+    private val batchBuffer = mutableListOf<ByteArray>()
+    private var onAudioDataCallback: ((ByteArray) -> Unit)? = null
+    private var lastSendTime = 0L
+
     @SuppressLint("MissingPermission")
     fun start(onAudioData: (ByteArray) -> Unit) {
         Log.d("AudioRecorder", "start() called")
@@ -34,6 +41,8 @@ class AudioRecorder {
 
             try {
                 isRecording = true
+                onAudioDataCallback = onAudioData
+                lastSendTime = System.currentTimeMillis()
                 recordingThread = Thread {
                     var recorder: AudioRecord? = null
                     var ns: NoiseSuppressor? = null
@@ -98,7 +107,8 @@ class AudioRecorder {
                                             System.arraycopy(staging, targetChunkSize, staging, 0, remaining)
                                         }
                                         stagedBytes = remaining
-                                        onAudioData(chunk)
+                                        // Batch chunks for efficient network transfer
+                                        addToBatch(chunk, onAudioData)
                                     }
 
                                     if (stagedBytes == staging.size) {
@@ -114,8 +124,10 @@ class AudioRecorder {
                         }
 
                         if (stagedBytes > 0 && isRecording) {
-                            onAudioData(staging.copyOf(stagedBytes))
+                            addToBatch(staging.copyOf(stagedBytes), onAudioData)
                         }
+                        // Flush any remaining batched audio
+                        flushBatch(onAudioData)
                     } catch (e: Exception) {
                         Log.e("AudioRecorder", "Error in recording thread", e)
                     } finally {
@@ -173,6 +185,10 @@ class AudioRecorder {
         if (!isModelSpeaking) {
             Log.d("AudioRecorder", "Muting microphone (model speaking)")
             isModelSpeaking = true
+            // Flush batched audio immediately when muting
+            synchronized(lock) {
+                onAudioDataCallback?.let { flushBatch(it) }
+            }
         }
     }
 
@@ -180,7 +196,45 @@ class AudioRecorder {
         if (isModelSpeaking) {
             Log.d("AudioRecorder", "Unmuting microphone")
             isModelSpeaking = false
+            lastSendTime = System.currentTimeMillis()
         }
+    }
+
+    /**
+     * Adds a chunk to the batch buffer and sends when threshold is reached.
+     * Reduces network writes from 50/sec (20ms chunks) to 10/sec (100ms batches).
+     */
+    private fun addToBatch(chunk: ByteArray, onAudioData: (ByteArray) -> Unit) {
+        batchBuffer.add(chunk)
+
+        // Send batch when we accumulate 100ms of audio or 100ms has elapsed
+        val elapsedMs = System.currentTimeMillis() - lastSendTime
+        val batchDurationMs = batchBuffer.size * AudioConfig.TARGET_INPUT_CHUNK_MS
+
+        if (batchDurationMs >= BATCH_SIZE_MS || elapsedMs >= BATCH_SIZE_MS) {
+            flushBatch(onAudioData)
+        }
+    }
+
+    /**
+     * Flushes batched audio by concatenating chunks and sending.
+     */
+    private fun flushBatch(onAudioData: (ByteArray) -> Unit) {
+        if (batchBuffer.isEmpty()) return
+
+        // Concatenate all chunks
+        val totalSize = batchBuffer.sumOf { it.size }
+        val batched = ByteArray(totalSize)
+        var offset = 0
+        for (chunk in batchBuffer) {
+            System.arraycopy(chunk, 0, batched, offset, chunk.size)
+            offset += chunk.size
+        }
+        batchBuffer.clear()
+        lastSendTime = System.currentTimeMillis()
+
+        Log.v("AudioRecorder", "Sending batched audio: ${batched.size} bytes (${totalSize / AudioConfig.TARGET_INPUT_CHUNK_BYTES} chunks)")
+        onAudioData(batched)
     }
 
     fun stop() {

@@ -11,7 +11,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -23,7 +22,6 @@ import trucker.geminilive.audio.BluetoothScoManager.ScoState
 import trucker.geminilive.audio.SoundManager
 import trucker.geminilive.network.GeminiState
 import trucker.geminilive.network.GeminiWebSocketClient
-import trucker.geminilive.network.NetworkSpeedMonitor
 import trucker.geminilive.network.VertexAuth
 
 class GeminiViewModel(application: Application) : AndroidViewModel(application) {
@@ -43,14 +41,10 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
     private var pendingState: GeminiState? = null
     private var isRecording = false
     private var isTurnCompletePending = false
-    private val networkSpeedMonitor = NetworkSpeedMonitor(application)
-
     init {
-        val projectId = VertexAuth.getProjectId(application)
+        val projectId = VertexAuth.getProjectId(getApplication())
         audioPlayer.onPlaybackComplete = {
             Log.d("GeminiVM", "Playback complete, entering silence window (600ms)")
-            // Resume speed monitoring now that playback is done
-            networkSpeedMonitor.setPlaybackActive(false)
             viewModelScope.launch {
                 delay(600)
                 Log.d("GeminiVM", "Silence window passed, re-enabling microphone. Pending turn complete: $isTurnCompletePending")
@@ -83,8 +77,6 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
                             toolTimerJob?.cancel()
                             toolTimerJob = null
                             soundManager.stopLoop()
-                            // Pause speed monitoring during playback (no network traffic expected)
-                            networkSpeedMonitor.setPlaybackActive(true)
                             audioPlayer.stopBufferingAndPlay()
                             pendingState = state
                             updateUi { it.copy(aiState = state) }
@@ -98,34 +90,25 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
                                     pendingState = state
                                     updateUi { it.copy(aiState = state) }
                                     
-                                    // Only initiate buffering/loop and timer if this is the FIRST tool in a sequence
+                                    // Only initiate buffering/loop if this is the FIRST tool in a sequence
                                     if (toolTimerJob == null) {
-                                        Log.d("GeminiVM", "  Starting tool timer loop")
+                                        Log.d("GeminiVM", "  Starting tool work loop")
                                         audioPlayer.startBuffering()
                                         soundManager.startWorkingLoop()
 
                                         toolTimerJob = launch {
                                             try {
-                                                // Randomized minimum perception delay (2-6s)
-                                                val minDelay = (2000..6000).random().toLong()
-                                                Log.v("GeminiVM", "    Timer set for ${minDelay}ms")
-                                                delay(minDelay)
-                                                
-                                                // NO CHEATING: If the server is still actually working after the 
-                                                // minimum delay, we stay in the working loop until it finishes.
+                                                // Wait for actual work to finish
                                                 while (pendingState == GeminiState.WORKING) {
-                                                    delay(100)
+                                                    delay(50)
                                                 }
 
-                                                Log.d("GeminiVM", "    Timer & Work finished, stopping loop")
-                                                // Both min delay passed AND actual work is finished
+                                                Log.d("GeminiVM", "    Work finished, stopping loop")
                                                 soundManager.stopLoop()
-                                                // Pause speed monitoring during playback (no network traffic expected)
-                                                networkSpeedMonitor.setPlaybackActive(true)
                                                 audioPlayer.stopBufferingAndPlay()
                                                 toolTimerJob = null
 
-                                                // Apply the final state reached after all tools/delays finished
+                                                // Apply the final state reached after all tools finished
                                                 pendingState?.let { lastState ->
                                                     Log.d("GeminiVM", "    Applying final state: $lastState")
                                                     updateUi { it.copy(aiState = lastState) }
@@ -179,8 +162,6 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 // Mute microphone when model starts speaking to prevent self-interruption
                 audioRecorder.mute()
-                // Pause speed monitoring during AI speech (no network traffic expected during playback)
-                networkSpeedMonitor.setPlaybackActive(true)
                 audioPlayer.play(audioData)
                 viewModelScope.launch {
                     if (interruptionJob != null) {
@@ -287,9 +268,6 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun start() {
-        // Start network monitoring for active session
-        startNetworkMonitoring()
-
         // Immediate reset for a clean start
         _uiState.value = GeminiUiState(
             isConnected = true,
@@ -297,10 +275,7 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
             aiState = GeminiState.IDLE,
             currentTool = "",
             log = emptyList(),
-            lastError = "",
-            userText = "",
-            geminiText = "",
-            isDisabledDueToSlowNetwork = false
+            lastError = ""
         )
         addLog("Starting session...")
         
@@ -361,76 +336,10 @@ class GeminiViewModel(application: Application) : AndroidViewModel(application) 
 
         updateUi { it.copy(isConnected = false, status = "Disconnected") }
         addLog("Session stopped")
-
-        // Stop network monitoring when session ends
-        networkSpeedMonitor.stopMonitoring()
-    }
-
-    private fun startNetworkMonitoring() {
-        networkSpeedMonitor.startMonitoring()
-
-        // Listen for zero-speed timeout (3 seconds at 0 kbps)
-        viewModelScope.launch {
-            Log.d("GeminiVM", "Starting zeroSpeedTimeout collector")
-            networkSpeedMonitor.zeroSpeedTimeout.collect {
-                Log.d("GeminiVM", "Zero speed timeout received! isConnected=${uiState.value.isConnected}")
-                if (uiState.value.isConnected) {
-                    addLog("Zero speed detected for 3 seconds - stopping session")
-                    soundManager.playErrorChime()
-                    stop()
-                }
-                // Show warning and close the app
-                addLog("Network unavailable - closing app after 3 zero-speed polls")
-                updateUi {
-                    it.copy(
-                        isDisabledDueToSlowNetwork = true,
-                        status = "Closing - no network for 12 seconds",
-                        lastError = "Network connection dropped"
-                    )
-                }
-                // Trigger app close
-                onCloseApp?.invoke()
-            }
-        }
-
-        viewModelScope.launch {
-            networkSpeedMonitor.networkStatus.collectLatest { status ->
-                val currentState = _uiState.value
-                val wasSufficient = currentState.isNetworkSpeedSufficient
-                val isNowSufficient = status.isSpeedSufficient
-
-                updateUi {
-                    it.copy(
-                        networkSpeedKbps = status.downloadSpeedKbps,
-                        isNetworkSpeedSufficient = status.isSpeedSufficient,
-                        networkType = status.networkType.name,
-                        // Show warning when zero speed is being tracked
-                        status = if (status.isZeroSpeed && it.isConnected) {
-                            "No data... ${(status.zeroSpeedDurationMs / 1000) + 1}s"
-                        } else {
-                            it.status
-                        }
-                    )
-                }
-
-                // Clear disabled flag when speed recovers from zero
-                if (status.isSpeedSufficient && _uiState.value.isDisabledDueToSlowNetwork) {
-                    updateUi { it.copy(isDisabledDueToSlowNetwork = false) }
-                    addLog("Network speed recovered to ${status.downloadSpeedKbps.toInt()} kbps")
-                }
-            }
-        }
-    }
-
-    private fun checkNetworkSpeed(): Boolean {
-        // Only check speed for warnings, don't block starting
-        val status = networkSpeedMonitor.networkStatus.value
-        return status.isSpeedSufficient
     }
 
     override fun onCleared() {
         super.onCleared()
-        networkSpeedMonitor.stopMonitoring()
         stop()
         audioPlayer.release()
         soundManager.release()
@@ -446,12 +355,7 @@ data class GeminiUiState(
     val geminiText: String = "",
     val currentTool: String = "",
     val lastError: String = "",
-    val log: List<String> = emptyList(),
-    // Network speed monitoring
-    val networkSpeedKbps: Float = 0f,
-    val isNetworkSpeedSufficient: Boolean = false,
-    val networkType: String = "Unknown",
-    val isDisabledDueToSlowNetwork: Boolean = false
+    val log: List<String> = emptyList()
 )
 
 

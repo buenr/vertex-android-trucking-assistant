@@ -10,6 +10,40 @@ import trucker.geminilive.tools.TruckingTools
 import trucker.geminilive.tools.ToolCallLogger
 import java.util.concurrent.TimeUnit
 
+/**
+ * Represents the current connection state of the WebSocket.
+ */
+enum class ConnectionState {
+    DISCONNECTED,
+    CONNECTING,
+    CONNECTED,
+    READY,
+    STALE
+}
+
+/**
+ * Tracks connection state with timestamps for stale detection.
+ */
+data class ConnectionTracker(
+    var state: ConnectionState = ConnectionState.DISCONNECTED,
+    var lastActivityTimestamp: Long = 0L,
+    var connectionEstablishedTimestamp: Long = 0L
+) {
+    fun updateActivity() {
+        lastActivityTimestamp = System.currentTimeMillis()
+    }
+    
+    fun timeSinceLastActivityMs(): Long {
+        return if (lastActivityTimestamp == 0L) 0L 
+               else System.currentTimeMillis() - lastActivityTimestamp
+    }
+    
+    fun timeSinceConnectionEstablishedMs(): Long {
+        return if (connectionEstablishedTimestamp == 0L) 0L
+               else System.currentTimeMillis() - connectionEstablishedTimestamp
+    }
+}
+
 class GeminiWebSocketClient(
     private val projectId: String,
     private val onStatusUpdate: (String) -> Unit,
@@ -20,14 +54,18 @@ class GeminiWebSocketClient(
     private val onTurnComplete: () -> Unit,
     private val onToolCallStarted: (String) -> Unit,
     private val onCloseAppRequested: () -> Unit,
-    private val onError: (String) -> Unit
+    private val onError: (String) -> Unit,
+    private val onConnectionStale: (() -> Unit)? = null
 ) {
     companion object {
         private val sharedClient = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(0, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(0, TimeUnit.SECONDS)
+            .pingInterval(5, TimeUnit.SECONDS)
             .build()
+
+        private const val STALE_THRESHOLD_MS = 30_000L // 30 seconds (reduced from 60s)
 
         private const val SYSTEM_PROMPT = """You are the Swift Transportation Trucking Copilot, an AI-powered voice assistant for professional truck drivers. You operate hands-free in the cab, providing real-time information through natural voice conversation.
 
@@ -95,23 +133,26 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
     private val isReady = java.util.concurrent.atomic.AtomicBoolean(false)
     private val isModelSpeaking = java.util.concurrent.atomic.AtomicBoolean(false)
     private val json = Json { ignoreUnknownKeys = true }
+    private val connectionTracker = ConnectionTracker()
 
-    private val wsListener = object : WebSocketListener() {
+    private fun createWebSocketListener() = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
-            if (webSocket != this@GeminiWebSocketClient.webSocket) return
             Log.d("GeminiWS", "WebSocket Connected: ${response.message}")
+            connectionTracker.state = ConnectionState.CONNECTED
+            connectionTracker.connectionEstablishedTimestamp = System.currentTimeMillis()
+            connectionTracker.updateActivity()
             onStatusUpdate("WebSocket open, sending config...")
-            sendSetup()
+            sendSetup(webSocket)
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
-            if (webSocket != this@GeminiWebSocketClient.webSocket) return
+            connectionTracker.updateActivity()
             Log.v("GeminiWS", "Received text message: $text")
             handleRawMessage(text)
         }
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-            if (webSocket != this@GeminiWebSocketClient.webSocket) return
+            connectionTracker.updateActivity()
             Log.v("GeminiWS", "Received binary message: ${bytes.size} bytes")
             try {
                 handleRawMessage(bytes.utf8())
@@ -122,23 +163,22 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-            if (webSocket != this@GeminiWebSocketClient.webSocket) return
             val errorMsg = "WebSocket failure: ${t.message}"
             Log.e("GeminiWS", errorMsg, t)
             isReady.set(false)
+            connectionTracker.state = ConnectionState.DISCONNECTED
             onError(errorMsg)
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-            if (webSocket != this@GeminiWebSocketClient.webSocket) return
             Log.d("GeminiWS", "WebSocket Closing: $reason (code: $code)")
             onStatusUpdate("Server closing connection ($code)")
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-            if (webSocket != this@GeminiWebSocketClient.webSocket) return
             Log.d("GeminiWS", "WebSocket Closed: $reason (code: $code)")
             isReady.set(false)
+            connectionTracker.state = ConnectionState.DISCONNECTED
             if (code != 1000) {
                 onError("Connection closed unexpectedly ($code)")
             }
@@ -149,20 +189,23 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
         disconnect()
         isModelSpeaking.set(false)
         isReady.set(false)
+        connectionTracker.state = ConnectionState.CONNECTING
+        connectionTracker.updateActivity()
         try {
             val url = "wss://us-central1-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1beta1.LlmBidiService/BidiGenerateContent"
             val request = Request.Builder()
                 .url(url)
                 .addHeader("Authorization", "Bearer $accessToken")
                 .build()
-            webSocket = sharedClient.newWebSocket(request, wsListener)
+            webSocket = sharedClient.newWebSocket(request, createWebSocketListener())
         } catch (e: Exception) {
+            connectionTracker.state = ConnectionState.DISCONNECTED
             onError("Connection Error: ${e.message}")
         }
     }
 
-    private fun sendSetup() {
-        val currentWs = webSocket ?: return
+    private fun sendSetup(targetWebSocket: WebSocket) {
+        val currentWs = targetWebSocket
         val setupJson = buildJsonObject {
             putJsonObject("setup") {
                 put("model", "projects/$projectId/locations/us-central1/publishers/google/models/gemini-live-2.5-flash-native-audio")
@@ -191,84 +234,9 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
                         put("endOfSpeechSensitivity", "END_SENSITIVITY_LOW")
                     }
                 }
-                putJsonArray("tools") {
-                    addJsonObject {
-                        putJsonArray("functionDeclarations") {
-                            addJsonObject {
-                                put("name", "getDriverProfile")
-                                put("description", "Returns driver profile, current location, tractor/trailer equipment, and compliance status. Call when driver asks who they are, where they are, what equipment they have, or their compliance status.")
-                            }
-                            addJsonObject {
-                                put("name", "getLoadStatus")
-                                put("description", "Returns active load progress, stop timeline, ETAs, and route risks. Call when driver asks about load status, stop ETAs, detention risk, or appointment timing.")
-                            }
-                            addJsonObject {
-                                put("name", "getHoursOfServiceClocks")
-                                put("description", "Returns Hours of Service clock status and deadlines. Call when driver asks about available drive time, duty time, cycle time, or next required break.")
-                            }
-                            addJsonObject {
-                                put("name", "getTrafficAndWeather")
-                                put("description", "Returns traffic and weather intelligence for next 1 hour of route. Call when driver asks about road conditions, weather, or traffic ahead.")
-                            }
-                            addJsonObject {
-                                put("name", "getDispatchInbox")
-                                put("description", "Returns dispatch inbox messages and exceptions. Call when driver asks about new dispatch instructions, unresolved issues, or messages.")
-                                putJsonObject("parameters") {
-                                    put("type", "object")
-                                    putJsonObject("properties") {
-                                        putJsonObject("unreadOnly") {
-                                            put("type", "boolean")
-                                            put("description", "If true, return only unread dispatch items")
-                                        }
-                                    }
-                                    putJsonArray("required") {
-                                        add("unreadOnly")
-                                    }
-                                }
-                            }
-                            addJsonObject {
-                                put("name", "getCompanyFAQs")
-                                put("description", "Returns Swift Transportation FAQs: Pet Policy, Rider Policy, Breakdown SOP, Late Procedures, Macros, Headsets. Call for company-policy questions not specific to a load state.")
-                            }
-                            addJsonObject {
-                                put("name", "getPaycheckInfo")
-                                put("description", "Returns paycheck summary with miles and CPM. Call when driver asks about pay, settlement amounts, or miles tied to pay.")
-                            }
-                            addJsonObject {
-                                put("name", "findNearestSwiftTerminal")
-                                put("description", "Returns nearest Swift terminal with amenities (shop, wash, parking). Call when driver asks where to park, get truck wash, or find terminal amenities.")
-                            }
-                            addJsonObject {
-                                put("name", "checkSafetyScore")
-                                put("description", "Returns driver safety score, ranking, and recent telemetry events. Call when driver asks about driving score, safety record, or bonus standing.")
-                            }
-                            addJsonObject {
-                                put("name", "getFuelNetworkRouting")
-                                put("description", "Returns approved in-network fuel stop based on location and route. Call when driver asks where to get fuel, shower, bathroom, dog park, or needs other fuel stop amenities.")
-                            }
-                            addJsonObject {
-                                put("name", "getContacts")
-                                put("description", "Returns contact info for Swift departments, Driver/Fleet Leaders. Call when driver asks for phone numbers or how to reach dispatch, payroll, safety, or their leader.")
-                            }
-                            addJsonObject {
-                                put("name", "getNextLoadDetails")
-                                put("description", "Returns details for next scheduled load including pickup/delivery windows. Call when driver asks about next load or pre-dispatch details.")
-                            }
-                            addJsonObject {
-                                put("name", "getMentorFAQs")
-                                put("description", "Returns driver mentor program details, benefits, requirements. Call when driver asks about becoming a mentor.")
-                            }
-                            addJsonObject {
-                                put("name", "getOwnerOperatorFAQs")
-                                put("description", "Returns owner-operator program details including lease options and pay structure. Call when driver asks about owning their own truck.")
-                            }
-                            addJsonObject {
-                                put("name", "closeApp")
-                                put("description", "Closes the Swift Copilot app when the driver explicitly requests to exit, quit, or close. Call ONLY when driver specifically says they want to close the app or exit. Do NOT call for general goodbyes.")
-                            }
-                        }
-                    }
-                }
+                // Serialize tools from single source of truth (TruckingTools.declaration)
+                val toolsJson = Json.encodeToJsonElement(TruckingTools.declaration)
+                put("tools", buildJsonArray { add(toolsJson) })
             }
         }
 
@@ -282,7 +250,7 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
         if (!isReady.get()) {
             return
         }
-        
+
         val currentWs = webSocket ?: return
         val base64Audio = Base64.encodeToString(audioData, Base64.NO_WRAP)
         val audioMessage = buildJsonObject {
@@ -328,6 +296,8 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
             if (element.containsKey("setupComplete") || element.containsKey("setup_complete")) {
                 Log.d("GeminiWS", "Setup Complete received")
                 isReady.set(true)
+                connectionTracker.state = ConnectionState.READY
+                connectionTracker.updateActivity()
                 onStatusUpdate("Ready")
                 onReady()
             }
@@ -457,20 +427,20 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
 
                 val currentWs = webSocket
                 if (currentWs != null && isReady.get()) {
-                val responseMessage = buildJsonObject {
-                    putJsonObject("toolResponse") {
-                        putJsonArray("functionResponses") {
-                            results.forEach { (name, idAndResult) ->
-                                val (id, result) = idAndResult
-                                addJsonObject {
-                                    put("name", name)
-                                    put("id", id)
-                                    put("response", result)
+                    val responseMessage = buildJsonObject {
+                        putJsonObject("toolResponse") {
+                            putJsonArray("functionResponses") {
+                                results.forEach { (name, idAndResult) ->
+                                    val (id, result) = idAndResult
+                                    addJsonObject {
+                                        put("name", name)
+                                        put("id", id)
+                                        put("response", result)
+                                    }
                                 }
                             }
                         }
                     }
-                }
                     currentWs.send(responseMessage.toString())
                 } else {
                     Log.w("GeminiWS", "Tool results ready but WebSocket not available or not ready")
@@ -484,8 +454,39 @@ Remember: You are the driver's trusted co-pilot. Keep them informed, keep them s
     fun disconnect() {
         isReady.set(false)
         isModelSpeaking.set(false)
+        connectionTracker.state = ConnectionState.DISCONNECTED
         webSocket?.close(1000, "Disconnect")
         webSocket = null
+    }
+
+    /**
+     * Returns the current connection state.
+     */
+    fun getConnectionState(): ConnectionState = connectionTracker.state
+
+    /**
+     * Returns the time in milliseconds since the last activity was received.
+     */
+    fun getTimeSinceLastActivityMs(): Long = connectionTracker.timeSinceLastActivityMs()
+
+    /**
+     * Returns the time in milliseconds since the connection was established.
+     */
+    fun getTimeSinceConnectionEstablishedMs(): Long = connectionTracker.timeSinceConnectionEstablishedMs()
+
+    /**
+     * Checks if the connection is stale (no activity for STALE_THRESHOLD_MS).
+     * If stale, triggers the onConnectionStale callback and returns true.
+     */
+    fun checkAndNotifyStaleConnection(): Boolean {
+        if (connectionTracker.state == ConnectionState.READY &&
+            connectionTracker.timeSinceLastActivityMs() > STALE_THRESHOLD_MS) {
+            connectionTracker.state = ConnectionState.STALE
+            Log.w("GeminiWS", "Connection detected as stale after ${connectionTracker.timeSinceLastActivityMs()}ms")
+            onConnectionStale?.invoke()
+            return true
+        }
+        return false
     }
     
     /**

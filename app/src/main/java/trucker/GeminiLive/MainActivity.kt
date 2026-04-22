@@ -39,12 +39,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import trucker.geminilive.network.GeminiState
-import trucker.geminilive.network.NetworkSpeedMonitor
 import trucker.geminilive.tools.ToolCallLogger
 import trucker.geminilive.ui.theme.TruckerAssistAudioTheme
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,26 +51,7 @@ class MainActivity : ComponentActivity() {
         
         // Initialize the tool call logger
         ToolCallLogger.init(applicationContext)
-
-        // Run pre-flight network check before initializing app
-        val networkMonitor = NetworkSpeedMonitor(application)
-
-        lifecycleScope.launch {
-            val isHealthy = networkMonitor.isConnectionHealthy()
-
-            if (!isHealthy) {
-                Toast.makeText(
-                    this@MainActivity,
-                    "Connection too weak for Gemini Live (>100kbps required)",
-                    Toast.LENGTH_LONG
-                ).show()
-                delay(2000)
-                finishAffinity()
-            } else {
-                // Proceed with normal app initialization
-                startApp()
-            }
-        }
+        startApp()
     }
     
     override fun onPause() {
@@ -94,15 +73,10 @@ class MainActivity : ComponentActivity() {
 
                 val context = LocalContext.current
 
-                // Set up callback to close app on zero-speed timeout
+                // Set up callback to close app on voice command
                 LaunchedEffect(viewModel) {
                     viewModel.onCloseApp = {
                         ToolCallLogger.flush() // Flush logs before closing
-                        Toast.makeText(
-                            context,
-                            "Closing app - no network for 12 seconds (6 polls)",
-                            Toast.LENGTH_LONG
-                        ).show()
                         finish()
                     }
                 }
@@ -170,44 +144,8 @@ fun CopilotScreen(
             text = "Swift Copilot",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 8.dp)
+            modifier = Modifier.padding(bottom = 24.dp)
         )
-
-        // Network Speed Indicator
-        NetworkSpeedIndicator(
-            speedKbps = uiState.networkSpeedKbps,
-            isSufficient = uiState.isNetworkSpeedSufficient,
-            networkType = uiState.networkType,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
-
-        // Slow Network Warning Banner
-        if (uiState.isDisabledDueToSlowNetwork) {
-            Surface(
-                color = Color(0xFFFFCDD2), // Light red
-                shape = MaterialTheme.shapes.small,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "⚠️ Connection lost (no data for 3s)",
-                        color = Color(0xFFB71C1C), // Dark red
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        text = "${uiState.networkSpeedKbps.toInt()} kbps",
-                        color = Color(0xFFB71C1C),
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-        }
 
         // Main Interaction Area
         Box(
@@ -300,53 +238,6 @@ fun CopilotScreen(
                 TextButton(onClick = onToggle) {
                     Text("STOP", color = Color.Red, fontWeight = FontWeight.Bold)
                 }
-            }
-        }
-    }
-}
-
-@Composable
-fun NetworkSpeedIndicator(
-    speedKbps: Float,
-    isSufficient: Boolean,
-    networkType: String,
-    modifier: Modifier = Modifier
-) {
-    val (backgroundColor, textColor) = when {
-        !isSufficient -> Pair(Color(0xFFFFCDD2), Color(0xFFB71C1C)) // Light red, dark red
-        speedKbps >= 500 -> Pair(Color(0xFFC8E6C9), Color(0xFF1B5E20)) // Light green, dark green
-        speedKbps >= 200 -> Pair(Color(0xFFFFF9C4), Color(0xFFF57F17)) // Light yellow, dark amber
-        else -> Pair(Color(0xFFFFF9C4), Color(0xFFF57F17)) // Marginal - yellow
-    }
-
-    Surface(
-        color = backgroundColor,
-        shape = MaterialTheme.shapes.small,
-        modifier = modifier
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = networkType.uppercase(),
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.sp,
-                color = textColor
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "${speedKbps.toInt()} kbps",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                color = textColor
-            )
-            if (!isSufficient) {
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "⚠️",
-                    fontSize = 12.sp
-                )
             }
         }
     }
